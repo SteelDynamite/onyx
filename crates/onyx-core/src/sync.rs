@@ -371,8 +371,8 @@ pub fn compute_checksum(data: &[u8]) -> String {
 fn is_syncable(path: &str) -> bool {
     let parts: Vec<&str> = path.split('/').collect();
     let filename = parts.last().copied().unwrap_or(path);
-    // .metadata.json only at workspace root (depth 1)
-    if filename == ".metadata.json" {
+    // .onyx-workspace.json only at workspace root (depth 1)
+    if filename == ".onyx-workspace.json" {
         return parts.len() == 1;
     }
     // .listdata.json only inside a list directory (depth 2)
@@ -529,9 +529,7 @@ async fn sync_workspace_inner(
     mode: SyncMode,
     on_progress: Option<ProgressCallback>,
 ) -> Result<SyncResult> {
-    // Sync into an "Onyx" subfolder so we don't scan the user's entire cloud storage
-    let sync_url = format!("{}/Onyx", webdav_url.trim_end_matches('/'));
-    let client = WebDavClient::new(&sync_url, username, password)?;
+    let client = WebDavClient::new(webdav_url, username, password)?;
     let mut sync_state = SyncState::load(workspace_path);
     let queue = OfflineQueue::load(workspace_path);
     let mut result = SyncResult::default();
@@ -542,8 +540,6 @@ async fn sync_workspace_inner(
         }
     };
 
-    // Ensure remote Onyx folder exists (creates it on first sync)
-    client.create_dir("").await.ok();
     client.test_connection().await?;
 
     // Scan local files
@@ -1117,9 +1113,9 @@ mod tests {
         // .listdata.json inside a list dir (depth 2)
         assert!(is_syncable("My Tasks/.listdata.json"));
         assert!(!is_syncable(".listdata.json")); // root-level not valid
-        // .metadata.json only at root (depth 1)
-        assert!(is_syncable(".metadata.json"));
-        assert!(!is_syncable("My Tasks/.metadata.json")); // nested not valid
+        // .onyx-workspace.json only at root (depth 1)
+        assert!(is_syncable(".onyx-workspace.json"));
+        assert!(!is_syncable("My Tasks/.onyx-workspace.json")); // nested not valid
         // Non-syncable
         assert!(!is_syncable(".syncstate.json"));
         assert!(!is_syncable("random.txt"));
@@ -1133,7 +1129,7 @@ mod tests {
         let root = temp_dir.path();
 
         // Create a workspace-like structure
-        std::fs::write(root.join(".metadata.json"), "{}").unwrap();
+        std::fs::write(root.join(".onyx-workspace.json"), "{}").unwrap();
         std::fs::create_dir_all(root.join("My Tasks")).unwrap();
         std::fs::write(root.join("My Tasks").join(".listdata.json"), "{}").unwrap();
         std::fs::write(root.join("My Tasks").join("task1.md"), "# Task 1").unwrap();
@@ -1144,8 +1140,8 @@ mod tests {
         std::fs::write(root.join(".syncstate.json"), "{}").unwrap();
 
         let files = scan_local_files(root).unwrap();
-        assert_eq!(files.len(), 4); // .metadata.json, .listdata.json, task1.md, task2.md
-        assert!(files.iter().any(|f| f.path == ".metadata.json"));
+        assert_eq!(files.len(), 4); // .onyx-workspace.json, .listdata.json, task1.md, task2.md
+        assert!(files.iter().any(|f| f.path == ".onyx-workspace.json"));
         assert!(files.iter().any(|f| f.path == "My Tasks/.listdata.json"));
         assert!(files.iter().any(|f| f.path == "My Tasks/task1.md"));
         assert!(files.iter().any(|f| f.path == "My Tasks/task2.md"));
@@ -1159,12 +1155,12 @@ mod tests {
     fn test_get_sync_status_no_state() {
         let temp_dir = TempDir::new().unwrap();
         let root = temp_dir.path();
-        std::fs::write(root.join(".metadata.json"), "{}").unwrap();
+        std::fs::write(root.join(".onyx-workspace.json"), "{}").unwrap();
 
         let status = get_sync_status(root).unwrap();
         assert!(status.last_sync.is_none());
         assert_eq!(status.tracked_files, 0);
-        assert_eq!(status.pending_changes, 1); // .metadata.json is new
+        assert_eq!(status.pending_changes, 1); // .onyx-workspace.json is new
         assert_eq!(status.queued_operations, 0);
     }
 

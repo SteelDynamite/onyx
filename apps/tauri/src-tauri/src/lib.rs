@@ -451,10 +451,118 @@ fn set_workspace_theme(
     s.config.save_to_file(&s.config_path.clone()).map_err(|e| e.to_string())
 }
 
+/// A remote folder entry returned to the frontend.
+#[derive(Debug, Serialize, Deserialize)]
+struct RemoteFolderEntry {
+    name: String,
+    is_workspace: bool,
+}
+
+/// Summary of a list inside a remote workspace.
+#[derive(Debug, Serialize, Deserialize)]
+struct RemoteListInfo {
+    name: String,
+    task_count: usize,
+}
+
+#[tauri::command]
+async fn list_remote_folder(
+    url: String,
+    username: String,
+    password: String,
+    path: String,
+) -> Result<Vec<RemoteFolderEntry>, String> {
+    let client = onyx_core::webdav::WebDavClient::new(&url, &username, &password)
+        .map_err(|e| e.to_string())?;
+    let entries = client.list_files(&path).await.map_err(|e| e.to_string())?;
+
+    let mut folders = Vec::new();
+    for entry in entries {
+        if !entry.is_dir { continue; }
+        // Check if this folder contains .onyx-workspace.json
+        let sub_path = if path.is_empty() {
+            entry.path.clone()
+        } else {
+            format!("{}/{}", path.trim_end_matches('/'), entry.path)
+        };
+        let sub_files = client.list_files(&sub_path).await.unwrap_or_default();
+        let is_workspace = sub_files.iter().any(|f| !f.is_dir && f.path == ".onyx-workspace.json");
+        folders.push(RemoteFolderEntry {
+            name: entry.path,
+            is_workspace,
+        });
+    }
+
+    Ok(folders)
+}
+
+#[tauri::command]
+async fn inspect_remote_workspace(
+    url: String,
+    username: String,
+    password: String,
+    path: String,
+) -> Result<Vec<RemoteListInfo>, String> {
+    let client = onyx_core::webdav::WebDavClient::new(&url, &username, &password)
+        .map_err(|e| e.to_string())?;
+    let entries = client.list_files(&path).await.map_err(|e| e.to_string())?;
+
+    let mut lists = Vec::new();
+    for entry in entries {
+        if !entry.is_dir { continue; }
+        let list_path = if path.is_empty() {
+            entry.path.clone()
+        } else {
+            format!("{}/{}", path.trim_end_matches('/'), entry.path)
+        };
+        let files = client.list_files(&list_path).await.unwrap_or_default();
+        let has_listdata = files.iter().any(|f| !f.is_dir && f.path == ".listdata.json");
+        if has_listdata {
+            let task_count = files.iter().filter(|f| !f.is_dir && f.path.ends_with(".md")).count();
+            lists.push(RemoteListInfo {
+                name: entry.path,
+                task_count,
+            });
+        }
+    }
+
+    Ok(lists)
+}
+
+#[tauri::command]
+async fn create_remote_workspace(
+    url: String,
+    username: String,
+    password: String,
+    path: String,
+) -> Result<(), String> {
+    let client = onyx_core::webdav::WebDavClient::new(&url, &username, &password)
+        .map_err(|e| e.to_string())?;
+    if !path.is_empty() {
+        client.ensure_dir(&path).await.map_err(|e| e.to_string())?;
+    }
+    // Upload an empty .onyx-workspace.json
+    let metadata = serde_json::json!({
+        "version": 1,
+        "list_order": [],
+        "last_opened_list": null,
+    });
+    let file_path = if path.is_empty() {
+        ".onyx-workspace.json".to_string()
+    } else {
+        format!("{}/{}", path.trim_end_matches('/'), ".onyx-workspace.json")
+    };
+    client.put_file(&file_path, serde_json::to_string_pretty(&metadata).unwrap().into_bytes())
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[tauri::command]
 fn add_webdav_workspace(
     name: String,
     webdav_url: String,
+    webdav_path: String,
     username: String,
     password: String,
     state: State<'_, Mutex<AppState>>,
@@ -467,6 +575,7 @@ fn add_webdav_workspace(
     let mut ws = WorkspaceConfig::new(managed_dir);
     ws.mode = WorkspaceMode::Webdav;
     ws.webdav_url = Some(webdav_url.clone());
+    ws.webdav_path = Some(webdav_path);
 
     s.config.add_workspace(name.clone(), ws);
     s.config.set_current_workspace(name).map_err(|e| e.to_string())?;
@@ -529,12 +638,17 @@ async fn sync_workspace(
     mode: String,
     state: State<'_, Mutex<AppState>>,
 ) -> Result<SyncResult, String> {
-    // Step 1: read config
+    // Step 1: read config — combine base URL with the user-chosen remote path
     let (workspace_path, webdav_url) = {
         let s = lock_state(&state)?;
         let ws = s.config.workspaces.get(&workspace_name)
             .ok_or("Workspace not found")?;
-        (ws.path.clone(), ws.webdav_url.clone().ok_or("No WebDAV URL configured")?)
+        let base = ws.webdav_url.clone().ok_or("No WebDAV URL configured")?;
+        let full = match &ws.webdav_path {
+            Some(p) if !p.is_empty() => format!("{}/{}", base.trim_end_matches('/'), p.trim_matches('/')),
+            _ => base,
+        };
+        (ws.path.clone(), full)
     };
 
     // Step 2: load credentials
@@ -686,6 +800,9 @@ pub fn run() {
             set_webdav_config,
             set_workspace_theme,
             add_webdav_workspace,
+            list_remote_folder,
+            inspect_remote_workspace,
+            create_remote_workspace,
             store_credentials,
             load_credentials,
             test_webdav_connection,

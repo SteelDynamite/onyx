@@ -7,7 +7,7 @@ use uuid::Uuid;
 use crate::error::{Error, Result};
 use crate::models::{Task, TaskList, TaskStatus};
 
-/// Metadata stored in root .metadata.json
+/// Metadata stored in root .onyx-workspace.json
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RootMetadata {
     pub version: u32,
@@ -124,7 +124,7 @@ impl FileSystemStorage {
     }
 
     fn metadata_path(&self) -> PathBuf {
-        self.root_path.join(".metadata.json")
+        self.root_path.join(".onyx-workspace.json")
     }
 
     fn list_dir_path(&self, list_id: Uuid) -> Result<PathBuf> {
@@ -658,7 +658,7 @@ mod tests {
     fn test_init_creates_metadata() {
         let temp_dir = TempDir::new().unwrap();
         let _storage = init_storage(&temp_dir);
-        assert!(temp_dir.path().join(".metadata.json").exists());
+        assert!(temp_dir.path().join(".onyx-workspace.json").exists());
     }
 
     #[test]
@@ -683,7 +683,7 @@ mod tests {
         let storage = init_storage(&temp_dir);
 
         // Delete the metadata file to simulate missing
-        fs::remove_file(temp_dir.path().join(".metadata.json")).unwrap();
+        fs::remove_file(temp_dir.path().join(".onyx-workspace.json")).unwrap();
 
         let meta = storage.read_root_metadata().unwrap();
         assert_eq!(meta.version, 1);

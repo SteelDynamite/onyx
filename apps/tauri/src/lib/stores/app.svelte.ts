@@ -329,9 +329,9 @@ async function setTheme(theme: string | null) {
   }
 }
 
-async function addWebdavWorkspace(name: string, webdavUrl: string, username: string, password: string) {
+async function addWebdavWorkspace(name: string, webdavUrl: string, webdavPath: string, username: string, password: string) {
   try {
-    await invoke("add_webdav_workspace", { name, webdavUrl, username, password });
+    await invoke("add_webdav_workspace", { name, webdavUrl, webdavPath, username, password });
     config = await invoke<AppConfig>("get_config");
     await loadLists();
     const ws = config?.workspaces[name];

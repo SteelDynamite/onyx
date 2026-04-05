@@ -43,7 +43,7 @@ Two-crate workspace (`resolver = "2"`, edition 2021) plus a Tauri app:
 
 ### On-disk format
 
-Workspaces are plain folders. Each task list is a subfolder containing `.listdata.json` (metadata/ordering) and one `.md` file per task. The workspace root has `.metadata.json` for list ordering.
+Workspaces are plain folders. Each task list is a subfolder containing `.listdata.json` (metadata/ordering) and one `.md` file per task. The workspace root has `.onyx-workspace.json` for list ordering and workspace detection.
 
 ### Tauri GUI structure
 
@@ -59,10 +59,14 @@ The GUI uses Svelte 5 runes mode (`$state`, `$derived`, `$effect`, `$props()`). 
 - **Main panel header**: Hamburger + window controls in top bar; list name (large, bold) + kebab below divider (matching task detail layout). Kebab has Rename, Group by due date, Delete completed, Delete list.
 - **New task**: FAB button opens bottom toast sheet (outside sliding container for fixed positioning).
 
-### Current state (2026-04-03)
+### Development phase
+
+Pre-alpha. No users, no released builds, no data to migrate. Breaking changes to on-disk formats, config structure, or sync conventions are free — do not add migration logic.
+
+### Current state (2026-04-05)
 
 - **Phase 1** (Core + CLI): Complete
-- **Phase 2** (WebDAV sync): Complete — CLI + GUI sync working, auto-creates `Onyx/` subfolder on remote
+- **Phase 2** (WebDAV sync): In progress — reworking to let users browse and pick a remote folder instead of hardcoding `Onyx/` subfolder
 - **Phase 3** (GUI MVP): Complete
 - **Phase 4** (Mobile): Tauri Android cfg-gated, needs `tauri android init` + build
 

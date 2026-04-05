@@ -25,6 +25,7 @@ export interface WorkspaceConfig {
   path: string;
   mode: WorkspaceMode;
   webdav_url: string | null;
+  webdav_path: string | null;
   last_sync: string | null;
   theme: string | null;
 }

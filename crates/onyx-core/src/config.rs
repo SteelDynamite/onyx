@@ -24,6 +24,8 @@ pub struct WorkspaceConfig {
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub webdav_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub webdav_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub last_sync: Option<chrono::DateTime<chrono::Utc>>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub theme: Option<String>,
@@ -31,7 +33,7 @@ pub struct WorkspaceConfig {
 
 impl WorkspaceConfig {
     pub fn new(path: PathBuf) -> Self {
-        Self { path, mode: WorkspaceMode::Local, webdav_url: None, last_sync: None, theme: None }
+        Self { path, mode: WorkspaceMode::Local, webdav_url: None, webdav_path: None, last_sync: None, theme: None }
     }
 }
 
