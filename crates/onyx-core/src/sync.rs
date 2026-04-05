@@ -167,9 +167,15 @@ pub fn compute_sync_actions(
             }
 
             // Local present, remote gone, base known: remote was deleted
-            (Some(_), None, Some(_)) => {
-                // modified locally + deleted remote -> upload (local wins)
-                actions.push(SyncAction::Upload { path: path.to_string() });
+            (Some(l), None, Some(b)) => {
+                let local_changed = l.checksum != b.checksum;
+                if local_changed {
+                    // modified locally + deleted remotely -> upload (local wins)
+                    actions.push(SyncAction::Upload { path: path.to_string() });
+                } else {
+                    // unchanged locally + deleted remotely -> delete local
+                    actions.push(SyncAction::DeleteLocal { path: path.to_string() });
+                }
             }
 
             // Remote present, local gone, base known: local was deleted
@@ -872,7 +878,20 @@ mod tests {
 
         let actions = compute_sync_actions(&local, &remote, &state);
         assert_eq!(actions.len(), 1);
-        // Local present, remote gone, base known -> upload (local wins)
+        // Local unchanged, remote deleted -> delete local
+        assert_eq!(actions[0], SyncAction::DeleteLocal { path: "file.md".to_string() });
+    }
+
+    #[test]
+    fn test_remote_deleted_local_modified() {
+        let local = vec![make_local("file.md", "new_checksum")];
+        let remote = vec![];
+        let mut state = SyncState::default();
+        state.files.insert("file.md".to_string(), make_base("abc123"));
+
+        let actions = compute_sync_actions(&local, &remote, &state);
+        assert_eq!(actions.len(), 1);
+        // Local modified, remote deleted -> upload (local wins)
         assert_eq!(actions[0], SyncAction::Upload { path: "file.md".to_string() });
     }
 
