@@ -109,6 +109,16 @@ async function switchWorkspace(name: string) {
   }
 }
 
+async function renameWorkspace(oldName: string, newName: string) {
+  try {
+    await invoke("rename_workspace", { oldName, newName });
+    config = await invoke<AppConfig>("get_config");
+    error = null;
+  } catch (e) {
+    error = String(e);
+  }
+}
+
 async function removeWorkspace(name: string) {
   try {
     await invoke("remove_workspace", { name });
@@ -393,6 +403,7 @@ export const app = {
   loadConfig,
   addWorkspace,
   switchWorkspace,
+  renameWorkspace,
   removeWorkspace,
   loadLists,
   loadTasks,

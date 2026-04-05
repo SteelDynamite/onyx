@@ -160,6 +160,26 @@ fn remove_workspace(
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn rename_workspace(
+    old_name: String,
+    new_name: String,
+    state: State<'_, Mutex<AppState>>,
+) -> Result<(), String> {
+    let mut s = lock_state(&state)?;
+    let ws = s.config.get_workspace(&old_name)
+        .ok_or_else(|| format!("Workspace '{}' not found", old_name))?;
+    let old_path = ws.path.clone();
+    let new_path = old_path.parent()
+        .ok_or("Workspace path has no parent directory")?
+        .join(&new_name);
+    std::fs::rename(&old_path, &new_path).map_err(|e| e.to_string())?;
+    s.config.rename_workspace(&old_name, new_name.clone()).map_err(|e| e.to_string())?;
+    s.config.workspaces.get_mut(&new_name).unwrap().path = new_path;
+    s.repo = None;
+    s.config.save_to_file(&s.config_path.clone()).map_err(|e| e.to_string())
+}
+
 // ── Workspace init ───────────────────────────────────────────────────
 
 #[tauri::command]
@@ -648,6 +668,7 @@ pub fn run() {
             add_workspace,
             set_current_workspace,
             remove_workspace,
+            rename_workspace,
             init_workspace,
             get_lists,
             create_list,

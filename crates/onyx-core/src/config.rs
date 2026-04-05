@@ -60,6 +60,21 @@ impl AppConfig {
         self.workspaces.remove(name)
     }
 
+    pub fn rename_workspace(&mut self, old_name: &str, new_name: String) -> Result<()> {
+        if !self.workspaces.contains_key(old_name) {
+            return Err(Error::InvalidData(format!("Workspace '{}' not found", old_name)));
+        }
+        if self.workspaces.contains_key(&new_name) {
+            return Err(Error::InvalidData(format!("Workspace '{}' already exists", new_name)));
+        }
+        let ws = self.workspaces.remove(old_name).unwrap();
+        if self.current_workspace.as_deref() == Some(old_name) {
+            self.current_workspace = Some(new_name.clone());
+        }
+        self.workspaces.insert(new_name, ws);
+        Ok(())
+    }
+
     pub fn get_workspace(&self, name: &str) -> Option<&WorkspaceConfig> {
         self.workspaces.get(name)
     }
