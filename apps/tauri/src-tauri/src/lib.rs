@@ -476,22 +476,23 @@ async fn list_remote_folder(
         .map_err(|e| e.to_string())?;
     let entries = client.list_files(&path).await.map_err(|e| e.to_string())?;
 
-    let mut folders = Vec::new();
-    for entry in entries {
-        if !entry.is_dir { continue; }
-        // Check if this folder contains .onyx-workspace.json
-        let sub_path = if path.is_empty() {
-            entry.path.clone()
-        } else {
-            format!("{}/{}", path.trim_end_matches('/'), entry.path)
-        };
-        let sub_files = client.list_files(&sub_path).await.unwrap_or_default();
+    let dir_entries: Vec<_> = entries.into_iter().filter(|e| e.is_dir).collect();
+
+    // Check all subfolders for .onyx-workspace.json in parallel
+    let sub_paths: Vec<_> = dir_entries.iter().map(|entry| {
+        if path.is_empty() { entry.path.clone() }
+        else { format!("{}/{}", path.trim_end_matches('/'), entry.path) }
+    }).collect();
+    let checks: Vec<_> = sub_paths.iter().map(|sp| {
+        client.list_files(sp)
+    }).collect();
+    let results: Vec<_> = futures::future::join_all(checks).await
+        .into_iter().map(|r| r.unwrap_or_default()).collect();
+
+    let folders = dir_entries.into_iter().zip(results).map(|(entry, sub_files)| {
         let is_workspace = sub_files.iter().any(|f| !f.is_dir && f.path == ".onyx-workspace.json");
-        folders.push(RemoteFolderEntry {
-            name: entry.path,
-            is_workspace,
-        });
-    }
+        RemoteFolderEntry { name: entry.path, is_workspace }
+    }).collect();
 
     Ok(folders)
 }
