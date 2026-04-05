@@ -25,6 +25,7 @@ let syncing = $state(false);
 let syncMode = $state<"full" | "push" | "pull">("full");
 let lastSyncResult = $state<SyncResult | null>(null);
 let error = $state<string | null>(null);
+let missingWorkspace = $state<string | null>(null);
 
 // ── Derived ──────────────────────────────────────────────────────────
 
@@ -70,8 +71,18 @@ async function loadConfig() {
   try {
     config = await invoke<AppConfig>("get_config");
     if (hasWorkspace) {
+      // Try loading lists — if the workspace path is gone, get_lists will fail
+      lists = [];
+      try {
+        lists = await invoke<TaskList[]>("get_lists");
+      } catch {
+        missingWorkspace = config!.current_workspace;
+        screen = "missing";
+        return;
+      }
+      if (lists.length > 0 && !activeListId) activeListId = lists[0].id;
+      if (activeListId) await loadTasks();
       screen = "tasks";
-      await loadLists();
     } else {
       screen = "setup";
     }
@@ -343,6 +354,26 @@ async function addWebdavWorkspace(name: string, webdavUrl: string, webdavPath: s
   }
 }
 
+async function forgetMissingWorkspace() {
+  if (!missingWorkspace) return;
+  await removeWorkspace(missingWorkspace);
+  missingWorkspace = null;
+  config = await invoke<AppConfig>("get_config");
+  if (hasWorkspace) {
+    // Switch to the next available workspace
+    const nextName = Object.keys(config!.workspaces)[0];
+    if (nextName) {
+      await switchWorkspace(nextName);
+      screen = "tasks";
+      return;
+    }
+  }
+  screen = "setup";
+  lists = [];
+  tasks = [];
+  activeListId = null;
+}
+
 function setScreen(s: Screen) {
   screen = s;
 }
@@ -399,6 +430,9 @@ export const app = {
   get hasWorkspace() {
     return hasWorkspace;
   },
+  get missingWorkspace() {
+    return missingWorkspace;
+  },
   getSubtasks,
   loadConfig,
   addWorkspace,
@@ -422,6 +456,7 @@ export const app = {
   setSyncMode,
   setTheme,
   addWebdavWorkspace,
+  forgetMissingWorkspace,
   setScreen,
   clearError,
 };

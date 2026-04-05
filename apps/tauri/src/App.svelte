@@ -29,7 +29,25 @@
         </div>
       {/if}
 
-      {#if app.screen === "setup"}
+      {#if app.screen === "missing"}
+        <div class="flex h-full items-center justify-center p-6">
+          <div class="w-full max-w-sm rounded-2xl bg-card-light p-8 shadow-lg dark:bg-card-dark">
+            <h1 class="mb-1 text-2xl font-bold">Workspace Not Found</h1>
+            <p class="mb-2 text-sm text-text-secondary-light dark:text-text-secondary-dark">
+              The workspace <strong>{app.missingWorkspace}</strong> could not be opened. Its folder may have been moved or deleted.
+            </p>
+            <p class="mb-6 text-sm text-text-secondary-light dark:text-text-secondary-dark">
+              It will be removed from your workspace list. You can re-add it if the folder becomes available again.
+            </p>
+            <button
+              onclick={() => app.forgetMissingWorkspace()}
+              class="w-full rounded-lg bg-primary py-2.5 text-sm font-medium text-white hover:bg-primary-hover"
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      {:else if app.screen === "setup"}
         <SetupScreen cancellable={app.hasWorkspace} />
       {:else}
         <TasksScreen />

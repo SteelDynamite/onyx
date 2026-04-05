@@ -44,4 +44,4 @@ export interface SyncResult {
   errors: string[];
 }
 
-export type Screen = "setup" | "tasks" | "settings";
+export type Screen = "setup" | "tasks" | "settings" | "missing";
