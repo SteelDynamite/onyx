@@ -120,6 +120,9 @@ fn add_workspace(
     state: State<'_, Mutex<AppState>>,
 ) -> Result<(), String> {
     let mut s = lock_state(&state)?;
+    if s.config.workspaces.contains_key(&name) {
+        return Err(format!("A workspace named '{}' already exists", name));
+    }
     let ws = WorkspaceConfig::new(PathBuf::from(&path));
     s.config.add_workspace(name.clone(), ws);
     s.config
@@ -569,6 +572,9 @@ fn add_webdav_workspace(
     state: State<'_, Mutex<AppState>>,
 ) -> Result<(), String> {
     let mut s = lock_state(&state)?;
+    if s.config.workspaces.contains_key(&name) {
+        return Err(format!("A workspace named '{}' already exists", name));
+    }
     let managed_dir = s.app_data_dir.join("workspaces").join(&name);
     std::fs::create_dir_all(&managed_dir).map_err(|e| e.to_string())?;
     TaskRepository::init(managed_dir.clone()).map(|_| ()).map_err(|e| e.to_string())?;

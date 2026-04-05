@@ -1,5 +1,6 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
+  import { documentDir } from "@tauri-apps/api/path";
   import { open } from "@tauri-apps/plugin-dialog";
   import { app } from "../stores/app.svelte";
   import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -15,8 +16,10 @@
 
   // ── Shared state ──────────────────────────────────────────────────
   let mode = $state<"local" | "webdav" | null>(isMobile ? "webdav" : null);
-  let name = $state("");
+  let name = $state("Onyx");
   let path = $state("");
+
+  documentDir().then((d) => { path = d; }).catch(() => {});
 
   // ── WebDAV state ──────────────────────────────────────────────────
   let webdavUrl = $state("");
@@ -37,7 +40,7 @@
   let previewLoading = $state(false);
 
   // Create workspace state
-  let createName = $state("");
+  let createName = $state("Onyx");
   let creating = $state(false);
 
   // ── Derived ───────────────────────────────────────────────────────
@@ -157,7 +160,7 @@
   }
 
   function startCreate() {
-    createName = "";
+    createName = "Onyx";
     webdavStep = "create";
   }
 
