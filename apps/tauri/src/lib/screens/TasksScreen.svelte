@@ -335,7 +335,7 @@
             class="inline-block h-2 w-2 rounded-full {app.syncing ? 'animate-pulse bg-primary' : app.syncStatus === 'synced' || app.syncStatus === 'idle' ? 'bg-green-500' : app.syncStatus === 'error' ? 'bg-red-500' : 'bg-gray-400'}"
           ></span>
           <span class="flex-1 text-xs opacity-60">
-            {app.syncing ? "Syncing..." : app.syncStatus === "synced" || app.syncStatus === "idle" ? "Synced" : app.syncStatus === "error" ? "Sync error" : "Offline"}{#if !app.syncing && app.lastSyncResult}&nbsp;&nbsp;↑{app.lastSyncResult.uploaded} ↓{app.lastSyncResult.downloaded}{/if}
+            {app.syncing ? "Syncing..." : app.syncStatus === "synced" || app.syncStatus === "idle" ? "Synced" : app.syncStatus === "error" ? "Sync error" : "Offline"}{#if !app.syncing && app.lastSyncResult && (app.lastSyncResult.uploaded > 0 || app.lastSyncResult.downloaded > 0)}&nbsp;&nbsp;{#if app.lastSyncResult.uploaded > 0}↑{app.lastSyncResult.uploaded}{/if}{#if app.lastSyncResult.uploaded > 0 && app.lastSyncResult.downloaded > 0} {/if}{#if app.lastSyncResult.downloaded > 0}↓{app.lastSyncResult.downloaded}{/if}{/if}
           </span>
           <!-- Manual sync button -->
           <button
