@@ -250,7 +250,7 @@
                   {/if}
                   <div class="min-w-0 flex-1">
                     <p class="truncate text-sm">{name}</p>
-                    <p class="truncate text-xs opacity-40">{ws?.mode === "webdav" ? ws.webdav_url ?? "WebDAV" : ws?.path ?? ""}</p>
+                    <p class="truncate text-xs opacity-40">{ws?.mode === "webdav" ? ws.webdav_url ?? "WebDAV" : ws?.path?.replace(/\/[^/]+\/?$/, "") ?? ""}</p>
                   </div>
                 </button>
                 <button
