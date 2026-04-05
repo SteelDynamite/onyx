@@ -511,6 +511,19 @@ fn set_workspace_theme(
     s.config.save_to_file(&s.config_path.clone()).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn set_sync_interval(
+    workspace_id: String,
+    interval_secs: Option<u64>,
+    state: State<'_, Mutex<AppState>>,
+) -> Result<(), String> {
+    let mut s = lock_state(&state)?;
+    if let Some(ws) = s.config.workspaces.get_mut(&workspace_id) {
+        ws.sync_interval_secs = interval_secs;
+    }
+    s.config.save_to_file(&s.config_path.clone()).map_err(|e| e.to_string())
+}
+
 /// A remote folder entry returned to the frontend.
 #[derive(Debug, Serialize, Deserialize)]
 struct RemoteFolderEntry {
@@ -862,6 +875,7 @@ pub fn run() {
             get_group_by_due_date,
             set_webdav_config,
             set_workspace_theme,
+            set_sync_interval,
             add_webdav_workspace,
             list_remote_folder,
             inspect_remote_workspace,

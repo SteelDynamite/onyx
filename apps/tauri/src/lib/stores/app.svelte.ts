@@ -33,7 +33,7 @@ let lastSyncTime = 0;
 let _syncInterval: ReturnType<typeof setInterval> | null = null;
 let _syncDebounce: ReturnType<typeof setTimeout> | null = null;
 let _focusUnlisten: (() => void) | null = null;
-const SYNC_POLL_MS = 60_000;
+const DEFAULT_SYNC_INTERVAL_SECS = 60;
 const SYNC_DEBOUNCE_MS = 5_000;
 const SYNC_FOCUS_THRESHOLD_MS = 30_000;
 
@@ -78,6 +78,11 @@ let isWebdav = $derived(
   config?.current_workspace
     ? config.workspaces[config.current_workspace]?.mode === "webdav"
     : false,
+);
+let syncIntervalSecs = $derived(
+  config?.current_workspace
+    ? config.workspaces[config.current_workspace]?.sync_interval_secs ?? DEFAULT_SYNC_INTERVAL_SECS
+    : DEFAULT_SYNC_INTERVAL_SECS,
 );
 
 // ── Actions ──────────────────────────────────────────────────────────
@@ -350,7 +355,7 @@ function debouncedSync() {
 function startAutoSync() {
   stopAutoSync();
   triggerSync();
-  _syncInterval = setInterval(triggerSync, SYNC_POLL_MS);
+  _syncInterval = setInterval(triggerSync, syncIntervalSecs * 1000);
   getCurrentWindow().onFocusChanged(({ payload: focused }) => {
     if (focused && Date.now() - lastSyncTime > SYNC_FOCUS_THRESHOLD_MS) triggerSync();
   }).then((unlisten) => { _focusUnlisten = unlisten; });
@@ -360,6 +365,20 @@ function stopAutoSync() {
   if (_syncInterval) { clearInterval(_syncInterval); _syncInterval = null; }
   if (_syncDebounce) { clearTimeout(_syncDebounce); _syncDebounce = null; }
   if (_focusUnlisten) { _focusUnlisten(); _focusUnlisten = null; }
+}
+
+async function setSyncInterval(secs: number | null) {
+  if (!config?.current_workspace) return;
+  try {
+    await invoke("set_sync_interval", {
+      workspaceId: config.current_workspace,
+      intervalSecs: secs,
+    });
+    config = await invoke<AppConfig>("get_config");
+    if (isWebdav) startAutoSync();
+  } catch (e) {
+    error = String(e);
+  }
 }
 
 async function setTheme(theme: string | null) {
@@ -462,6 +481,9 @@ export const app = {
   get isWebdav() {
     return isWebdav;
   },
+  get syncIntervalSecs() {
+    return syncIntervalSecs;
+  },
   get lastSyncResult() {
     return lastSyncResult;
   },
@@ -496,6 +518,7 @@ export const app = {
   triggerSync,
   startAutoSync,
   stopAutoSync,
+  setSyncInterval,
   setTheme,
   addWebdavWorkspace,
   forgetMissingWorkspace,

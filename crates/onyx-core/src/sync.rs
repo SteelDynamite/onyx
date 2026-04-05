@@ -553,8 +553,11 @@ async fn sync_workspace_inner(
     // Execute actions, collecting failures for the queue
     let mut failed_actions = Vec::new();
 
+    // Build remote timestamp lookup for recording accurate download times
+    let remote_meta: HashMap<&str, &RemoteFileSnapshot> = remote_files.iter().map(|f| (f.path.as_str(), f)).collect();
+
     for action in &actions {
-        match execute_action(&client, workspace_path, action, &mut sync_state, &report).await {
+        match execute_action(&client, workspace_path, action, &mut sync_state, &remote_meta, &report).await {
             Ok(()) => {
                 match action {
                     SyncAction::Upload { .. } => result.uploaded += 1,
@@ -592,6 +595,7 @@ async fn execute_action(
     workspace_path: &Path,
     action: &SyncAction,
     sync_state: &mut SyncState,
+    remote_meta: &HashMap<&str, &RemoteFileSnapshot>,
     report: &(dyn Fn(&str) + Send + Sync),
 ) -> Result<()> {
     match action {
@@ -701,10 +705,8 @@ async fn execute_action(
             }
             std::fs::write(&local_path, &data)?;
 
-            // Record in sync state
-            let modified = std::fs::metadata(&local_path).ok()
-                .and_then(|m| m.modified().ok())
-                .map(|t| { let dt: DateTime<Utc> = t.into(); dt.to_rfc3339() });
+            // Record remote's last_modified so next diff won't see a timestamp mismatch
+            let modified = remote_meta.get(path.as_str()).and_then(|r| r.last_modified.clone());
             sync_state.record_file(path, &checksum, modified.as_deref(), data.len() as u64);
         }
 

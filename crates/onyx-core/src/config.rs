@@ -31,11 +31,13 @@ pub struct WorkspaceConfig {
     pub last_sync: Option<chrono::DateTime<chrono::Utc>>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub theme: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub sync_interval_secs: Option<u64>,
 }
 
 impl WorkspaceConfig {
     pub fn new(name: String, path: PathBuf) -> Self {
-        Self { name, path, mode: WorkspaceMode::Local, webdav_url: None, webdav_path: None, last_sync: None, theme: None }
+        Self { name, path, mode: WorkspaceMode::Local, webdav_url: None, webdav_path: None, last_sync: None, theme: None, sync_interval_secs: None }
     }
 }
 

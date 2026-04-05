@@ -29,6 +29,7 @@ export interface WorkspaceConfig {
   webdav_path: string | null;
   last_sync: string | null;
   theme: string | null;
+  sync_interval_secs: number | null;
 }
 
 export interface AppConfig {

@@ -202,6 +202,23 @@
         </div>
       </div>
 
+      <div class="mt-3">
+        <label class="mb-1 block text-xs font-medium opacity-60">Sync interval</label>
+        <select
+          value={String(app.syncIntervalSecs)}
+          onchange={(e) => {
+            const val = parseInt((e.target as HTMLSelectElement).value);
+            app.setSyncInterval(val === 60 ? null : val);
+          }}
+          class="w-full appearance-none rounded-lg border border-border-light bg-surface-light px-3 py-2 text-sm text-text-light outline-none focus:border-primary dark:border-border-dark dark:bg-surface-dark dark:text-text-dark"
+        >
+          <option value="30">30 seconds</option>
+          <option value="60">1 minute</option>
+          <option value="120">2 minutes</option>
+          <option value="300">5 minutes</option>
+          <option value="600">10 minutes</option>
+        </select>
+      </div>
     </section>
   {/if}
 
