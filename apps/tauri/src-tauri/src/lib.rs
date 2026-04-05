@@ -160,15 +160,84 @@ fn remove_workspace(
 }
 
 #[tauri::command]
-fn rename_workspace(
+async fn rename_workspace(
     id: String,
     new_name: String,
     state: State<'_, Mutex<AppState>>,
 ) -> Result<(), String> {
-    let mut s = lock_state(&state)?;
-    s.config.rename_workspace(&id, new_name).map_err(|e| e.to_string())?;
-    s.repo = None;
-    s.config.save_to_file(&s.config_path.clone()).map_err(|e| e.to_string())
+    // Extract workspace info while holding the lock briefly
+    let (mode, old_path, webdav_url, webdav_path) = {
+        let s = lock_state(&state)?;
+        let ws = s.config.workspaces.get(&id).ok_or("Workspace not found")?;
+        (
+            ws.mode.clone(),
+            ws.path.clone(),
+            ws.webdav_url.clone(),
+            ws.webdav_path.clone(),
+        )
+    };
+
+    match mode {
+        WorkspaceMode::Local => {
+            // Rename the local folder
+            let parent = old_path.parent().ok_or("Workspace has no parent directory")?;
+            let new_path = parent.join(&new_name);
+            if new_path != old_path {
+                if new_path.exists() {
+                    return Err(format!("A folder named '{}' already exists at that location", new_name));
+                }
+                std::fs::rename(&old_path, &new_path).map_err(|e| format!("Failed to rename folder: {}", e))?;
+            }
+            let mut s = lock_state(&state)?;
+            s.config.rename_workspace(&id, new_name).map_err(|e| e.to_string())?;
+            if let Some(ws) = s.config.workspaces.get_mut(&id) {
+                ws.path = new_path;
+            }
+            s.repo = None;
+            s.config.save_to_file(&s.config_path.clone()).map_err(|e| e.to_string())?;
+        }
+        WorkspaceMode::Webdav => {
+            // Rename the remote folder via WebDAV MOVE
+            let base_url = webdav_url.as_deref().ok_or("No WebDAV URL configured")?;
+            let remote_path = webdav_path.as_deref().unwrap_or("");
+
+            let domain = base_url
+                .split("://").nth(1)
+                .and_then(|rest| rest.split('/').next())
+                .unwrap_or("").to_string();
+            let (username, password) = tokio::task::spawn_blocking(move || {
+                webdav::load_credentials(&domain)
+                    .map(|(u, p)| ((*u).clone(), (*p).clone()))
+                    .map_err(|e| e.to_string())
+            }).await.map_err(|e| e.to_string())??;
+
+            let client = webdav::WebDavClient::new(base_url, &username, &password)
+                .map_err(|e| e.to_string())?;
+
+            // Compute new remote path by replacing the last segment
+            let new_remote_path = if remote_path.is_empty() || remote_path == "/" {
+                new_name.clone()
+            } else if let Some(parent) = remote_path.trim_end_matches('/').rsplit_once('/') {
+                format!("{}/{}", parent.0, new_name)
+            } else {
+                new_name.clone()
+            };
+
+            if new_remote_path != remote_path {
+                client.move_resource(remote_path, &new_remote_path).await.map_err(|e| e.to_string())?;
+            }
+
+            let mut s = lock_state(&state)?;
+            s.config.rename_workspace(&id, new_name).map_err(|e| e.to_string())?;
+            if let Some(ws) = s.config.workspaces.get_mut(&id) {
+                ws.webdav_path = Some(new_remote_path);
+            }
+            s.repo = None;
+            s.config.save_to_file(&s.config_path.clone()).map_err(|e| e.to_string())?;
+        }
+    }
+
+    Ok(())
 }
 
 // ── Workspace init ───────────────────────────────────────────────────

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { app } from "../stores/app.svelte";
+  import ConfirmDialog from "../components/ConfirmDialog.svelte";
 
   let { onclose, workspaceId, ondelete }: { onclose?: () => void; workspaceId: string; ondelete?: (id: string) => void } = $props();
 
@@ -15,6 +16,7 @@
   let renaming = $state(false);
   let renameValue = $state("");
   let showKebab = $state(false);
+  let confirmRename = $state(false);
 
   $effect(() => {
     if (!ws?.webdav_url) return;
@@ -70,6 +72,13 @@
     renaming = false;
     var trimmed = renameValue.trim();
     if (!trimmed || trimmed === ws?.name) return;
+    confirmRename = true;
+  }
+
+  async function doRename() {
+    confirmRename = false;
+    var trimmed = renameValue.trim();
+    if (!trimmed) return;
     await app.renameWorkspace(workspaceId, trimmed);
   }
   function handleWindowClick(e: MouseEvent) {
@@ -250,3 +259,13 @@
 
   <p class="mt-8 text-center text-xs opacity-30">Tauri v2 + Svelte</p>
 </main>
+
+{#if confirmRename}
+  <ConfirmDialog
+    message="Rename workspace to '{renameValue.trim()}'?"
+    detail={isWebdav ? "This will rename the folder on the WebDAV server." : "This will rename the folder on disk."}
+    confirmText="Rename"
+    onconfirm={doRename}
+    oncancel={() => confirmRename = false}
+  />
+{/if}

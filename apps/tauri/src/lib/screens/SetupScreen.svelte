@@ -194,7 +194,7 @@
 
   function goBack() {
     mode = null;
-    name = "";
+    name = "Onyx";
     path = "";
     webdavUrl = "";
     webdavUser = "";
