@@ -28,7 +28,9 @@
 
   async function handleCreate() {
     if (!name.trim() || !path.trim()) return;
-    await app.addWorkspace(name.trim(), path.trim());
+    const sep = path.includes("\\") ? "\\" : "/";
+    const fullPath = path.trimEnd().replace(/[\\/]+$/, "") + sep + name.trim();
+    await app.addWorkspace(name.trim(), fullPath);
   }
 
   async function handleOpen() {
