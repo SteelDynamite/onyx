@@ -104,3 +104,7 @@ The GUI uses Svelte 5 runes mode (`$state`, `$derived`, `$effect`, `$props()`). 
 ## Roadmap
 
 See `PLAN.md` for the 7-phase roadmap. Detailed API docs in `docs/API.md`, development practices in `docs/DEVELOPMENT.md`.
+
+## GitButler
+
+If you generate code or modify files, run the gitbutler update branches MCP tool.
