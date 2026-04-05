@@ -120,15 +120,11 @@ fn add_workspace(
     state: State<'_, Mutex<AppState>>,
 ) -> Result<(), String> {
     let mut s = lock_state(&state)?;
-    if s.config.workspaces.contains_key(&name) {
-        return Err(format!("A workspace named '{}' already exists", name));
-    }
-    let ws = WorkspaceConfig::new(PathBuf::from(&path));
-    s.config.add_workspace(name.clone(), ws);
+    let ws = WorkspaceConfig::new(name, PathBuf::from(&path));
+    let id = s.config.add_workspace(ws);
     s.config
-        .set_current_workspace(name)
+        .set_current_workspace(id)
         .map_err(|e| e.to_string())?;
-    // Reset repo so it reopens on next access
     s.repo = None;
     s.config
         .save_to_file(&s.config_path.clone())
@@ -137,12 +133,12 @@ fn add_workspace(
 
 #[tauri::command]
 fn set_current_workspace(
-    name: String,
+    id: String,
     state: State<'_, Mutex<AppState>>,
 ) -> Result<(), String> {
     let mut s = lock_state(&state)?;
     s.config
-        .set_current_workspace(name)
+        .set_current_workspace(id)
         .map_err(|e| e.to_string())?;
     s.repo = None;
     s.config
@@ -152,11 +148,11 @@ fn set_current_workspace(
 
 #[tauri::command]
 fn remove_workspace(
-    name: String,
+    id: String,
     state: State<'_, Mutex<AppState>>,
 ) -> Result<(), String> {
     let mut s = lock_state(&state)?;
-    s.config.remove_workspace(&name);
+    s.config.remove_workspace(&id);
     s.repo = None;
     s.config
         .save_to_file(&s.config_path.clone())
@@ -165,20 +161,12 @@ fn remove_workspace(
 
 #[tauri::command]
 fn rename_workspace(
-    old_name: String,
+    id: String,
     new_name: String,
     state: State<'_, Mutex<AppState>>,
 ) -> Result<(), String> {
     let mut s = lock_state(&state)?;
-    let ws = s.config.get_workspace(&old_name)
-        .ok_or_else(|| format!("Workspace '{}' not found", old_name))?;
-    let old_path = ws.path.clone();
-    let new_path = old_path.parent()
-        .ok_or("Workspace path has no parent directory")?
-        .join(&new_name);
-    std::fs::rename(&old_path, &new_path).map_err(|e| e.to_string())?;
-    s.config.rename_workspace(&old_name, new_name.clone()).map_err(|e| e.to_string())?;
-    s.config.workspaces.get_mut(&new_name).unwrap().path = new_path;
+    s.config.rename_workspace(&id, new_name).map_err(|e| e.to_string())?;
     s.repo = None;
     s.config.save_to_file(&s.config_path.clone()).map_err(|e| e.to_string())
 }
@@ -428,12 +416,12 @@ fn get_group_by_due_date(
 
 #[tauri::command]
 fn set_webdav_config(
-    workspace_name: String,
+    workspace_id: String,
     webdav_url: String,
     state: State<'_, Mutex<AppState>>,
 ) -> Result<(), String> {
     let mut s = lock_state(&state)?;
-    if let Some(ws) = s.config.workspaces.get_mut(&workspace_name) {
+    if let Some(ws) = s.config.workspaces.get_mut(&workspace_id) {
         ws.webdav_url = Some(webdav_url);
     }
     s.config
@@ -443,12 +431,12 @@ fn set_webdav_config(
 
 #[tauri::command]
 fn set_workspace_theme(
-    workspace_name: String,
+    workspace_id: String,
     theme: Option<String>,
     state: State<'_, Mutex<AppState>>,
 ) -> Result<(), String> {
     let mut s = lock_state(&state)?;
-    if let Some(ws) = s.config.workspaces.get_mut(&workspace_name) {
+    if let Some(ws) = s.config.workspaces.get_mut(&workspace_id) {
         ws.theme = theme;
     }
     s.config.save_to_file(&s.config_path.clone()).map_err(|e| e.to_string())
@@ -572,20 +560,19 @@ fn add_webdav_workspace(
     state: State<'_, Mutex<AppState>>,
 ) -> Result<(), String> {
     let mut s = lock_state(&state)?;
-    if s.config.workspaces.contains_key(&name) {
-        return Err(format!("A workspace named '{}' already exists", name));
-    }
-    let managed_dir = s.app_data_dir.join("workspaces").join(&name);
+    // Use a UUID-based directory name to avoid filesystem conflicts with duplicate workspace names
+    let dir_id = uuid::Uuid::new_v4().to_string();
+    let managed_dir = s.app_data_dir.join("workspaces").join(&dir_id);
     std::fs::create_dir_all(&managed_dir).map_err(|e| e.to_string())?;
     TaskRepository::init(managed_dir.clone()).map(|_| ()).map_err(|e| e.to_string())?;
 
-    let mut ws = WorkspaceConfig::new(managed_dir);
+    let mut ws = WorkspaceConfig::new(name, managed_dir);
     ws.mode = WorkspaceMode::Webdav;
     ws.webdav_url = Some(webdav_url.clone());
     ws.webdav_path = Some(webdav_path);
 
-    s.config.add_workspace(name.clone(), ws);
-    s.config.set_current_workspace(name).map_err(|e| e.to_string())?;
+    let id = s.config.add_workspace(ws);
+    s.config.set_current_workspace(id).map_err(|e| e.to_string())?;
     s.repo = None;
 
     // Store credentials keyed by hostname
@@ -641,14 +628,14 @@ async fn test_webdav_connection(
 
 #[tauri::command]
 async fn sync_workspace(
-    workspace_name: String,
+    workspace_id: String,
     mode: String,
     state: State<'_, Mutex<AppState>>,
 ) -> Result<SyncResult, String> {
     // Step 1: read config — combine base URL with the user-chosen remote path
     let (workspace_path, webdav_url) = {
         let s = lock_state(&state)?;
-        let ws = s.config.workspaces.get(&workspace_name)
+        let ws = s.config.workspaces.get(&workspace_id)
             .ok_or("Workspace not found")?;
         let base = ws.webdav_url.clone().ok_or("No WebDAV URL configured")?;
         let full = match &ws.webdav_path {
@@ -691,7 +678,7 @@ async fn sync_workspace(
 
     {
         let mut s = lock_state(&state)?;
-        if let Some(ws) = s.config.workspaces.get_mut(&workspace_name) {
+        if let Some(ws) = s.config.workspaces.get_mut(&workspace_id) {
             ws.last_sync = Some(Utc::now());
         }
         s.config.save_to_file(&s.config_path.clone()).map_err(|e| e.to_string())?;

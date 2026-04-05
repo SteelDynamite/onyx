@@ -2,26 +2,30 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 use onyx_core::sync::{SyncMode, sync_workspace, get_sync_status};
 use onyx_core::webdav::{WebDavClient, store_credentials, load_credentials};
+use onyx_core::config::AppConfig;
 use crate::output;
 use super::{load_config, save_config};
+
+/// Resolve a workspace name to (id, config). Falls back to current workspace if name is None.
+fn resolve_workspace(config: &AppConfig, name: Option<&str>) -> Result<(String, onyx_core::config::WorkspaceConfig)> {
+    if let Some(name) = name {
+        let (id, ws) = config.find_by_name(name)
+            .ok_or_else(|| anyhow::anyhow!("Workspace '{}' not found", name))?;
+        Ok((id.clone(), ws.clone()))
+    } else {
+        let (id, ws) = config.get_current_workspace()
+            .context("No workspace set. Use 'onyx init' to create one.")?;
+        Ok((id.clone(), ws.clone()))
+    }
+}
 
 /// Run sync setup: prompt for URL, username, password, test connection, store credentials.
 pub fn setup(workspace_name: Option<String>) -> Result<()> {
     let mut config = load_config()?;
-
-    let (name, workspace) = if let Some(name) = workspace_name {
-        let ws = config.get_workspace(&name)
-            .ok_or_else(|| anyhow::anyhow!("Workspace '{}' not found", name))?
-            .clone();
-        (name, ws)
-    } else {
-        let (n, ws) = config.get_current_workspace()
-            .context("No workspace set. Use 'onyx init' to create one.")?;
-        (n.clone(), ws.clone())
-    };
+    let (id, workspace) = resolve_workspace(&config, workspace_name.as_deref())?;
 
     // Prompt for WebDAV URL
-    output::header(&format!("WebDAV sync setup for workspace \"{}\"", name.green()));
+    output::header(&format!("WebDAV sync setup for workspace \"{}\"", workspace.name.green()));
     output::blank();
 
     let url = prompt("WebDAV URL: ")?;
@@ -65,9 +69,9 @@ pub fn setup(workspace_name: Option<String>) -> Result<()> {
     }
 
     // Update workspace config with WebDAV URL
-    let mut ws = workspace;
-    ws.webdav_url = Some(url);
-    config.add_workspace(name, ws);
+    if let Some(ws) = config.workspaces.get_mut(&id) {
+        ws.webdav_url = Some(url);
+    }
     save_config(&config)?;
 
     output::success("Sync setup complete. Run 'onyx sync' to sync.");
@@ -77,21 +81,11 @@ pub fn setup(workspace_name: Option<String>) -> Result<()> {
 /// Execute a sync operation.
 pub fn execute(mode: SyncMode, workspace_name: Option<String>) -> Result<()> {
     let config = load_config()?;
-
-    let (name, workspace) = if let Some(name) = workspace_name {
-        let ws = config.get_workspace(&name)
-            .ok_or_else(|| anyhow::anyhow!("Workspace '{}' not found", name))?
-            .clone();
-        (name, ws)
-    } else {
-        let (n, ws) = config.get_current_workspace()
-            .context("No workspace set. Use 'onyx init' to create one.")?;
-        (n.clone(), ws.clone())
-    };
+    let (_id, workspace) = resolve_workspace(&config, workspace_name.as_deref())?;
 
     let url = workspace.webdav_url.as_ref()
         .ok_or_else(|| anyhow::anyhow!(
-            "No WebDAV URL configured for workspace '{}'. Run 'onyx sync --setup' first.", name
+            "No WebDAV URL configured for workspace '{}'. Run 'onyx sync --setup' first.", workspace.name
         ))?;
 
     let domain = extract_domain(url);
@@ -103,7 +97,7 @@ pub fn execute(mode: SyncMode, workspace_name: Option<String>) -> Result<()> {
         SyncMode::Push => "Pushing",
         SyncMode::Pull => "Pulling",
     };
-    output::info(&format!("{} workspace \"{}\"...", mode_str, name.green()));
+    output::info(&format!("{} workspace \"{}\"...", mode_str, workspace.name.green()));
 
     let rt = tokio::runtime::Runtime::new().context("Failed to create async runtime")?;
     let result = rt.block_on(sync_workspace(
@@ -147,13 +141,12 @@ pub fn status(workspace_name: Option<String>, all: bool) -> Result<()> {
     if all {
         // Show status for all workspaces that have sync configured
         let mut found_any = false;
-        let mut names: Vec<_> = config.workspaces.keys().cloned().collect();
-        names.sort();
-        for name in names {
-            let ws = config.get_workspace(&name).unwrap();
+        let mut workspaces: Vec<_> = config.workspaces.values().collect();
+        workspaces.sort_by(|a, b| a.name.cmp(&b.name));
+        for ws in workspaces {
             if ws.webdav_url.is_some() {
                 found_any = true;
-                print_workspace_status(&name, &ws.path, ws.webdav_url.as_deref())?;
+                print_workspace_status(&ws.name, &ws.path, ws.webdav_url.as_deref())?;
                 output::blank();
             }
         }
@@ -163,18 +156,8 @@ pub fn status(workspace_name: Option<String>, all: bool) -> Result<()> {
         return Ok(());
     }
 
-    let (name, workspace) = if let Some(name) = workspace_name {
-        let ws = config.get_workspace(&name)
-            .ok_or_else(|| anyhow::anyhow!("Workspace '{}' not found", name))?
-            .clone();
-        (name, ws)
-    } else {
-        let (n, ws) = config.get_current_workspace()
-            .context("No workspace set.")?;
-        (n.clone(), ws.clone())
-    };
-
-    print_workspace_status(&name, &workspace.path, workspace.webdav_url.as_deref())?;
+    let (_id, workspace) = resolve_workspace(&config, workspace_name.as_deref())?;
+    print_workspace_status(&workspace.name, &workspace.path, workspace.webdav_url.as_deref())?;
     Ok(())
 }
 
@@ -207,17 +190,13 @@ fn print_workspace_status(name: &str, path: &std::path::Path, webdav_url: Option
 
 /// Extract host from a URL for credential storage.
 fn extract_domain(url: &str) -> String {
-    // Strip scheme
     let after_scheme = url.split("://").nth(1).unwrap_or(url);
-    // Strip path
     let authority = after_scheme.split('/').next().unwrap_or(after_scheme);
-    // Strip userinfo (user:pass@host)
     let host_port = if let Some(at_pos) = authority.rfind('@') {
         &authority[at_pos + 1..]
     } else {
         authority
     };
-    // Strip port
     host_port.split(':').next().unwrap_or(host_port).to_string()
 }
 

@@ -22,6 +22,7 @@ export interface TaskList {
 export type WorkspaceMode = "local" | "webdav";
 
 export interface WorkspaceConfig {
+  name: string;
   path: string;
   mode: WorkspaceMode;
   webdav_url: string | null;

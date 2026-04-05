@@ -2,9 +2,9 @@
   import { invoke } from "@tauri-apps/api/core";
   import { app } from "../stores/app.svelte";
 
-  let { onclose, workspaceName, onrename, ondelete }: { onclose?: () => void; workspaceName: string; onrename?: (newName: string) => void; ondelete?: (name: string) => void } = $props();
+  let { onclose, workspaceId, ondelete }: { onclose?: () => void; workspaceId: string; ondelete?: (id: string) => void } = $props();
 
-  let ws = $derived(app.config?.workspaces[workspaceName]);
+  let ws = $derived(app.config?.workspaces[workspaceId]);
   let isWebdav = $derived(ws?.mode === "webdav");
 
   let webdavUrl = $state("");
@@ -45,7 +45,7 @@
   async function saveWebdav() {
     if (!webdavUrl.trim()) return;
     await invoke("set_webdav_config", {
-      workspaceName,
+      workspaceId,
       webdavUrl: webdavUrl.trim(),
     });
     if (webdavUser && webdavPass) {
@@ -62,16 +62,15 @@
   function startRename() {
     showKebab = false;
     renaming = true;
-    renameValue = workspaceName;
+    renameValue = ws?.name ?? "";
   }
 
   async function handleRename() {
     if (!renaming) return;
     renaming = false;
     var trimmed = renameValue.trim();
-    if (!trimmed || trimmed === workspaceName) return;
-    await app.renameWorkspace(workspaceName, trimmed);
-    onrename?.(trimmed);
+    if (!trimmed || trimmed === ws?.name) return;
+    await app.renameWorkspace(workspaceId, trimmed);
   }
   function handleWindowClick(e: MouseEvent) {
     if (showKebab && !(e.target as HTMLElement).closest("[data-settings-kebab]")) showKebab = false;
@@ -109,7 +108,7 @@
         autofocus
       />
     {:else}
-      <p class="text-xl font-bold">{workspaceName}</p>
+      <p class="text-xl font-bold">{ws?.name}</p>
     {/if}
   </div>
   <div class="relative shrink-0" data-settings-kebab>
@@ -133,7 +132,7 @@
           Rename
         </button>
         <button
-          onclick={() => { showKebab = false; ondelete?.(workspaceName); }}
+          onclick={() => { showKebab = false; ondelete?.(workspaceId); }}
           class="flex w-full items-center gap-2 px-4 py-2 text-sm text-danger hover:bg-black/5 dark:hover:bg-white/10"
         >
           <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">

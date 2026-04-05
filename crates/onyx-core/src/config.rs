@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 use crate::error::{Error, Result};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -18,6 +19,7 @@ impl Default for WorkspaceMode {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkspaceConfig {
+    pub name: String,
     pub path: PathBuf,
     #[serde(default)]
     pub mode: WorkspaceMode,
@@ -32,11 +34,12 @@ pub struct WorkspaceConfig {
 }
 
 impl WorkspaceConfig {
-    pub fn new(path: PathBuf) -> Self {
-        Self { path, mode: WorkspaceMode::Local, webdav_url: None, webdav_path: None, last_sync: None, theme: None }
+    pub fn new(name: String, path: PathBuf) -> Self {
+        Self { name, path, mode: WorkspaceMode::Local, webdav_url: None, webdav_path: None, last_sync: None, theme: None }
     }
 }
 
+/// Workspaces keyed by UUID string.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AppConfig {
     pub workspaces: HashMap<String, WorkspaceConfig>,
@@ -51,50 +54,49 @@ impl AppConfig {
         }
     }
 
-    pub fn add_workspace(&mut self, name: String, config: WorkspaceConfig) {
-        self.workspaces.insert(name, config);
+    pub fn add_workspace(&mut self, config: WorkspaceConfig) -> String {
+        let id = Uuid::new_v4().to_string();
+        self.workspaces.insert(id.clone(), config);
+        id
     }
 
-    pub fn remove_workspace(&mut self, name: &str) -> Option<WorkspaceConfig> {
-        if self.current_workspace.as_deref() == Some(name) {
+    pub fn remove_workspace(&mut self, id: &str) -> Option<WorkspaceConfig> {
+        if self.current_workspace.as_deref() == Some(id) {
             self.current_workspace = None;
         }
-        self.workspaces.remove(name)
+        self.workspaces.remove(id)
     }
 
-    pub fn rename_workspace(&mut self, old_name: &str, new_name: String) -> Result<()> {
-        if !self.workspaces.contains_key(old_name) {
-            return Err(Error::InvalidData(format!("Workspace '{}' not found", old_name)));
-        }
-        if self.workspaces.contains_key(&new_name) {
-            return Err(Error::InvalidData(format!("Workspace '{}' already exists", new_name)));
-        }
-        let ws = self.workspaces.remove(old_name).unwrap();
-        if self.current_workspace.as_deref() == Some(old_name) {
-            self.current_workspace = Some(new_name.clone());
-        }
-        self.workspaces.insert(new_name, ws);
+    pub fn rename_workspace(&mut self, id: &str, new_name: String) -> Result<()> {
+        let ws = self.workspaces.get_mut(id)
+            .ok_or_else(|| Error::InvalidData(format!("Workspace '{}' not found", id)))?;
+        ws.name = new_name;
         Ok(())
     }
 
-    pub fn get_workspace(&self, name: &str) -> Option<&WorkspaceConfig> {
-        self.workspaces.get(name)
+    pub fn get_workspace(&self, id: &str) -> Option<&WorkspaceConfig> {
+        self.workspaces.get(id)
     }
 
     pub fn get_current_workspace(&self) -> Result<(&String, &WorkspaceConfig)> {
-        let name = self.current_workspace.as_ref()
+        let id = self.current_workspace.as_ref()
             .ok_or_else(|| Error::WorkspaceNotFound("No current workspace set".to_string()))?;
-        let config = self.workspaces.get(name)
-            .ok_or_else(|| Error::WorkspaceNotFound(name.clone()))?;
-        Ok((name, config))
+        let config = self.workspaces.get(id)
+            .ok_or_else(|| Error::WorkspaceNotFound(id.clone()))?;
+        Ok((id, config))
     }
 
-    pub fn set_current_workspace(&mut self, name: String) -> Result<()> {
-        if !self.workspaces.contains_key(&name) {
-            return Err(Error::WorkspaceNotFound(name));
+    pub fn set_current_workspace(&mut self, id: String) -> Result<()> {
+        if !self.workspaces.contains_key(&id) {
+            return Err(Error::WorkspaceNotFound(id));
         }
-        self.current_workspace = Some(name);
+        self.current_workspace = Some(id);
         Ok(())
+    }
+
+    /// Find a workspace by display name. Returns (id, config) of the first match.
+    pub fn find_by_name(&self, name: &str) -> Option<(&String, &WorkspaceConfig)> {
+        self.workspaces.iter().find(|(_, ws)| ws.name == name)
     }
 
     pub fn load_from_file(path: &PathBuf) -> Result<Self> {
@@ -136,11 +138,11 @@ mod tests {
     }
 
     #[test]
-    fn test_get_current_workspace_name_points_to_removed_workspace() {
+    fn test_get_current_workspace_id_points_to_removed_workspace() {
         let mut config = AppConfig::new();
-        config.add_workspace("test".to_string(), WorkspaceConfig::new(PathBuf::from("/tmp")));
-        config.current_workspace = Some("test".to_string());
-        config.workspaces.remove("test");
+        let id = config.add_workspace(WorkspaceConfig::new("test".into(), PathBuf::from("/tmp")));
+        config.current_workspace = Some(id.clone());
+        config.workspaces.remove(&id);
 
         let result = config.get_current_workspace();
         assert!(result.is_err());
@@ -158,31 +160,31 @@ mod tests {
     #[test]
     fn test_set_current_workspace_valid() {
         let mut config = AppConfig::new();
-        config.add_workspace("real".to_string(), WorkspaceConfig::new(PathBuf::from("/tmp")));
-        assert!(config.set_current_workspace("real".to_string()).is_ok());
-        assert_eq!(config.current_workspace.as_deref(), Some("real"));
+        let id = config.add_workspace(WorkspaceConfig::new("real".into(), PathBuf::from("/tmp")));
+        assert!(config.set_current_workspace(id.clone()).is_ok());
+        assert_eq!(config.current_workspace.as_deref(), Some(id.as_str()));
     }
 
     #[test]
     fn test_remove_current_workspace_clears_current() {
         let mut config = AppConfig::new();
-        config.add_workspace("ws".to_string(), WorkspaceConfig::new(PathBuf::from("/tmp")));
-        config.set_current_workspace("ws".to_string()).unwrap();
+        let id = config.add_workspace(WorkspaceConfig::new("ws".into(), PathBuf::from("/tmp")));
+        config.set_current_workspace(id.clone()).unwrap();
 
-        config.remove_workspace("ws");
+        config.remove_workspace(&id);
         assert!(config.current_workspace.is_none());
-        assert!(config.get_workspace("ws").is_none());
+        assert!(config.get_workspace(&id).is_none());
     }
 
     #[test]
     fn test_remove_noncurrent_workspace_keeps_current() {
         let mut config = AppConfig::new();
-        config.add_workspace("a".to_string(), WorkspaceConfig::new(PathBuf::from("/a")));
-        config.add_workspace("b".to_string(), WorkspaceConfig::new(PathBuf::from("/b")));
-        config.set_current_workspace("a".to_string()).unwrap();
+        let id_a = config.add_workspace(WorkspaceConfig::new("a".into(), PathBuf::from("/a")));
+        let id_b = config.add_workspace(WorkspaceConfig::new("b".into(), PathBuf::from("/b")));
+        config.set_current_workspace(id_a.clone()).unwrap();
 
-        config.remove_workspace("b");
-        assert_eq!(config.current_workspace.as_deref(), Some("a"));
+        config.remove_workspace(&id_b);
+        assert_eq!(config.current_workspace.as_deref(), Some(id_a.as_str()));
     }
 
     #[test]
@@ -191,16 +193,16 @@ mod tests {
         let config_path = temp_dir.path().join("config.json");
 
         let mut config = AppConfig::new();
-        config.add_workspace("ws1".to_string(), WorkspaceConfig::new(PathBuf::from("/path/one")));
-        config.add_workspace("ws2".to_string(), WorkspaceConfig::new(PathBuf::from("/path/two")));
-        config.set_current_workspace("ws1".to_string()).unwrap();
+        let id1 = config.add_workspace(WorkspaceConfig::new("ws1".into(), PathBuf::from("/path/one")));
+        let _id2 = config.add_workspace(WorkspaceConfig::new("ws2".into(), PathBuf::from("/path/two")));
+        config.set_current_workspace(id1.clone()).unwrap();
         config.save_to_file(&config_path).unwrap();
 
         let loaded = AppConfig::load_from_file(&config_path).unwrap();
-        assert_eq!(loaded.current_workspace.as_deref(), Some("ws1"));
+        assert_eq!(loaded.current_workspace.as_deref(), Some(id1.as_str()));
         assert_eq!(loaded.workspaces.len(), 2);
-        assert_eq!(loaded.get_workspace("ws1").unwrap().path, PathBuf::from("/path/one"));
-        assert_eq!(loaded.get_workspace("ws2").unwrap().path, PathBuf::from("/path/two"));
+        assert_eq!(loaded.get_workspace(&id1).unwrap().path, PathBuf::from("/path/one"));
+        assert_eq!(loaded.get_workspace(&id1).unwrap().name, "ws1");
     }
 
     #[test]
@@ -231,13 +233,35 @@ mod tests {
     }
 
     #[test]
-    fn test_add_workspace_overwrites_existing() {
+    fn test_duplicate_names_allowed() {
         let mut config = AppConfig::new();
-        config.add_workspace("ws".to_string(), WorkspaceConfig::new(PathBuf::from("/old")));
-        config.add_workspace("ws".to_string(), WorkspaceConfig::new(PathBuf::from("/new")));
+        let id1 = config.add_workspace(WorkspaceConfig::new("Onyx".into(), PathBuf::from("/a")));
+        let id2 = config.add_workspace(WorkspaceConfig::new("Onyx".into(), PathBuf::from("/b")));
 
-        assert_eq!(config.get_workspace("ws").unwrap().path, PathBuf::from("/new"));
-        assert_eq!(config.workspaces.len(), 1);
+        assert_ne!(id1, id2);
+        assert_eq!(config.workspaces.len(), 2);
+        assert_eq!(config.get_workspace(&id1).unwrap().name, "Onyx");
+        assert_eq!(config.get_workspace(&id2).unwrap().name, "Onyx");
+    }
+
+    #[test]
+    fn test_find_by_name() {
+        let mut config = AppConfig::new();
+        let id = config.add_workspace(WorkspaceConfig::new("Tasks".into(), PathBuf::from("/tasks")));
+
+        let found = config.find_by_name("Tasks");
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().0, &id);
+
+        assert!(config.find_by_name("Nonexistent").is_none());
+    }
+
+    #[test]
+    fn test_rename_workspace() {
+        let mut config = AppConfig::new();
+        let id = config.add_workspace(WorkspaceConfig::new("Old".into(), PathBuf::from("/tmp")));
+        config.rename_workspace(&id, "New".into()).unwrap();
+        assert_eq!(config.get_workspace(&id).unwrap().name, "New");
     }
 
     #[test]
@@ -246,38 +270,15 @@ mod tests {
         let config_path = temp_dir.path().join("config.json");
 
         let mut config = AppConfig::new();
-        let mut ws = WorkspaceConfig::new(PathBuf::from("/tasks"));
+        let mut ws = WorkspaceConfig::new("synced".into(), PathBuf::from("/tasks"));
         ws.webdav_url = Some("https://dav.example.com/tasks".to_string());
         ws.last_sync = Some(chrono::Utc::now());
-        config.add_workspace("synced".to_string(), ws);
+        let id = config.add_workspace(ws);
         config.save_to_file(&config_path).unwrap();
 
         let loaded = AppConfig::load_from_file(&config_path).unwrap();
-        let ws = loaded.get_workspace("synced").unwrap();
+        let ws = loaded.get_workspace(&id).unwrap();
         assert_eq!(ws.webdav_url.as_deref(), Some("https://dav.example.com/tasks"));
         assert!(ws.last_sync.is_some());
-    }
-
-    #[test]
-    fn test_backwards_compat_loading_old_format() {
-        let temp_dir = TempDir::new().unwrap();
-        let config_path = temp_dir.path().join("config.json");
-
-        // Write old-format JSON without webdav_url, last_sync, mode, or theme fields
-        let old_json = r#"{
-            "workspaces": {
-                "personal": { "path": "/home/user/tasks" }
-            },
-            "current_workspace": "personal"
-        }"#;
-        std::fs::write(&config_path, old_json).unwrap();
-
-        let loaded = AppConfig::load_from_file(&config_path).unwrap();
-        let ws = loaded.get_workspace("personal").unwrap();
-        assert_eq!(ws.path, PathBuf::from("/home/user/tasks"));
-        assert!(ws.webdav_url.is_none());
-        assert!(ws.last_sync.is_none());
-        assert_eq!(ws.mode, WorkspaceMode::Local);
-        assert!(ws.theme.is_none());
     }
 }

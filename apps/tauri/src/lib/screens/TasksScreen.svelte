@@ -200,7 +200,7 @@
     if (isDesktop) appWindow.startDragging();
   }
 
-  let workspaceNames = $derived(app.config ? Object.keys(app.config.workspaces).sort((a, b) => a.localeCompare(b)) : []);
+  let workspaceIds = $derived(app.config ? Object.keys(app.config.workspaces).sort((a, b) => (app.config!.workspaces[a].name).localeCompare(app.config!.workspaces[b].name)) : []);
   let translateX = $derived(showDrawer ? '0' : '-80cqi');
 </script>
 
@@ -226,7 +226,7 @@
           onclick={() => (showWorkspacePicker = !showWorkspacePicker)}
           class="flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm font-semibold hover:bg-black/5 dark:hover:bg-white/10"
         >
-          <span class="truncate">{app.config?.current_workspace ?? "Workspace"}</span>
+          <span class="truncate">{app.config?.current_workspace ? app.config.workspaces[app.config.current_workspace]?.name ?? "Workspace" : "Workspace"}</span>
           <svg class="h-3.5 w-3.5 shrink-0 transition-transform {showWorkspacePicker ? 'rotate-180' : ''}" viewBox="0 0 20 20" fill="currentColor">
             <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" />
           </svg>
@@ -236,25 +236,25 @@
           <div
             class="absolute left-0 top-full z-40 mt-1 w-full rounded-lg border border-border-light bg-surface-light py-1 shadow-lg dark:border-border-dark dark:bg-surface-dark"
           >
-            {#each workspaceNames as name}
-              {@const ws = app.config?.workspaces[name]}
+            {#each workspaceIds as wsId}
+              {@const ws = app.config?.workspaces[wsId]}
               <div class="group flex items-center px-1 hover:bg-black/5 dark:hover:bg-white/10">
                 <button
-                  onclick={() => { if (name !== app.config?.current_workspace) app.switchWorkspace(name); showWorkspacePicker = false; }}
-                  class="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left {name === app.config?.current_workspace ? 'font-bold' : ''}"
+                  onclick={() => { if (wsId !== app.config?.current_workspace) app.switchWorkspace(wsId); showWorkspacePicker = false; }}
+                  class="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left {wsId === app.config?.current_workspace ? 'font-bold' : ''}"
                 >
-                  {#if name === app.config?.current_workspace}
+                  {#if wsId === app.config?.current_workspace}
                     <svg class="h-4 w-4 shrink-0 opacity-50" viewBox="0 0 20 20" fill="currentColor">
                       <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" />
                     </svg>
                   {/if}
                   <div class="min-w-0 flex-1">
-                    <p class="truncate text-sm">{name}</p>
+                    <p class="truncate text-sm">{ws?.name}</p>
                     <p class="truncate text-xs opacity-40">{ws?.mode === "webdav" ? ws.webdav_url ?? "WebDAV" : ws?.path?.replace(/\/[^/]+\/?$/, "") ?? ""}</p>
                   </div>
                 </button>
                 <button
-                  onclick={(e) => { e.stopPropagation(); settingsWorkspace = name; showSettings = true; showWorkspacePicker = false; }}
+                  onclick={(e) => { e.stopPropagation(); settingsWorkspace = wsId; showSettings = true; showWorkspacePicker = false; }}
                   class="shrink-0 rounded p-1 opacity-0 transition-opacity group-hover:opacity-40 hover:!opacity-80"
                 >
                   <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
@@ -597,7 +597,7 @@
     class="relative flex h-full w-full flex-col overflow-hidden rounded-2xl bg-surface-light transition-transform duration-200 dark:bg-surface-dark {showSettings ? 'scale-100' : 'scale-95'}"
     style="border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 25px 60px rgba(0,0,0,0.7), 0 10px 20px rgba(0,0,0,0.5)"
   >
-    <SettingsScreen onclose={closeSettings} workspaceName={settingsWorkspace ?? app.config?.current_workspace ?? ""} onrename={(newName) => settingsWorkspace = newName} ondelete={(name) => { closeSettings(); confirmRemoveWorkspace = name; }} />
+    <SettingsScreen onclose={closeSettings} workspaceId={settingsWorkspace ?? app.config?.current_workspace ?? ""} ondelete={(id) => { closeSettings(); confirmRemoveWorkspace = id; }} />
   </div>
 </div>
 
@@ -620,11 +620,11 @@
 <!-- Remove workspace confirmation -->
 {#if confirmRemoveWorkspace}
   <ConfirmDialog
-    message='Remove workspace "{confirmRemoveWorkspace}"?'
+    message='Remove workspace "{app.config?.workspaces[confirmRemoveWorkspace]?.name ?? confirmRemoveWorkspace}"?'
     detail="Files remain on disk."
     confirmText="Remove"
     danger
-    onconfirm={() => { const name = confirmRemoveWorkspace; confirmRemoveWorkspace = null; if (name) app.removeWorkspace(name); }}
+    onconfirm={() => { const id = confirmRemoveWorkspace; confirmRemoveWorkspace = null; if (id) app.removeWorkspace(id); }}
     oncancel={() => (confirmRemoveWorkspace = null)}
   />
 {/if}

@@ -28,8 +28,8 @@ pub fn execute(path: String, name: String) -> Result<()> {
         .unwrap_or_else(|_| AppConfig::new());
 
     // Add workspace
-    config.add_workspace(name.clone(), WorkspaceConfig::new(path_buf.clone()));
-    config.set_current_workspace(name.clone())?;
+    let id = config.add_workspace(WorkspaceConfig::new(name.clone(), path_buf.clone()));
+    config.set_current_workspace(id)?;
 
     // Save config
     config.save_to_file(&config_path)

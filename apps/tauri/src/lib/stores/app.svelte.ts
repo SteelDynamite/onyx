@@ -106,13 +106,13 @@ async function addWorkspace(name: string, path: string) {
   }
 }
 
-async function switchWorkspace(name: string) {
+async function switchWorkspace(id: string) {
   try {
-    await invoke("set_current_workspace", { name });
+    await invoke("set_current_workspace", { id });
     config = await invoke<AppConfig>("get_config");
     activeListId = null;
     await loadLists();
-    const ws = config?.workspaces[name];
+    const ws = config?.workspaces[id];
     if (ws) invoke("watch_workspace", { path: ws.path }).catch((e) => console.warn("File watcher failed:", e));
     error = null;
   } catch (e) {
@@ -120,9 +120,9 @@ async function switchWorkspace(name: string) {
   }
 }
 
-async function renameWorkspace(oldName: string, newName: string) {
+async function renameWorkspace(id: string, newName: string) {
   try {
-    await invoke("rename_workspace", { oldName, newName });
+    await invoke("rename_workspace", { id, newName });
     config = await invoke<AppConfig>("get_config");
     error = null;
   } catch (e) {
@@ -130,9 +130,9 @@ async function renameWorkspace(oldName: string, newName: string) {
   }
 }
 
-async function removeWorkspace(name: string) {
+async function removeWorkspace(id: string) {
   try {
-    await invoke("remove_workspace", { name });
+    await invoke("remove_workspace", { id });
     config = await invoke<AppConfig>("get_config");
     if (!hasWorkspace) {
       screen = "setup";
@@ -307,7 +307,7 @@ async function triggerSync() {
   error = null;
   try {
     const result = await invoke<SyncResult>("sync_workspace", {
-      workspaceName: config.current_workspace,
+      workspaceId: config.current_workspace,
       mode: syncMode,
     });
     lastSyncResult = result;
@@ -331,7 +331,7 @@ async function setTheme(theme: string | null) {
   if (!config?.current_workspace) return;
   try {
     await invoke("set_workspace_theme", {
-      workspaceName: config.current_workspace,
+      workspaceId: config.current_workspace,
       theme,
     });
     config = await invoke<AppConfig>("get_config");
@@ -345,8 +345,10 @@ async function addWebdavWorkspace(name: string, webdavUrl: string, webdavPath: s
     await invoke("add_webdav_workspace", { name, webdavUrl, webdavPath, username, password });
     config = await invoke<AppConfig>("get_config");
     await loadLists();
-    const ws = config?.workspaces[name];
-    if (ws) invoke("watch_workspace", { path: ws.path }).catch((e) => console.warn("File watcher failed:", e));
+    if (config?.current_workspace) {
+      const ws = config.workspaces[config.current_workspace];
+      if (ws) invoke("watch_workspace", { path: ws.path }).catch((e) => console.warn("File watcher failed:", e));
+    }
     screen = "tasks";
     error = null;
   } catch (e) {
