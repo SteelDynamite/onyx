@@ -202,38 +202,6 @@
         </div>
       </div>
 
-      <div class="mt-3 flex items-center gap-2">
-        <select
-          value={app.syncMode}
-          onchange={(e) => app.setSyncMode((e.target as HTMLSelectElement).value as "full" | "push" | "pull")}
-          class="appearance-none rounded-lg border border-border-light bg-surface-light px-3 py-2 text-sm text-text-light outline-none focus:border-primary dark:border-border-dark dark:bg-surface-dark dark:text-text-dark"
-        >
-          <option value="full">Sync both ways</option>
-          <option value="push">Push only</option>
-          <option value="pull">Pull only</option>
-        </select>
-        <button
-          onclick={() => app.triggerSync()}
-          disabled={app.syncing}
-          class="flex-1 rounded-lg bg-primary py-2 text-sm font-medium text-white hover:bg-primary-hover disabled:opacity-40"
-        >
-          {app.syncing ? "Syncing..." : "Sync Now"}
-        </button>
-      </div>
-      {#if app.error}
-        <p class="mt-1.5 text-xs text-danger">{app.error}</p>
-      {/if}
-      {#if ws?.last_sync}
-        {@const lastSync = new Date(ws.last_sync)}
-        {@const secsAgo = Math.floor((Date.now() - lastSync.getTime()) / 1000)}
-        {@const relTime = secsAgo < 60 ? "just now" : secsAgo < 3600 ? `${Math.floor(secsAgo / 60)}m ago` : `${Math.floor(secsAgo / 3600)}h ago`}
-        <p class="mt-1.5 text-xs opacity-40">
-          Last sync: {relTime}
-          {#if app.lastSyncResult}
-            &nbsp;·&nbsp;↑{app.lastSyncResult.uploaded} ↓{app.lastSyncResult.downloaded}
-          {/if}
-        </p>
-      {/if}
     </section>
   {/if}
 

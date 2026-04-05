@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type {
   AppConfig,
   Task,
@@ -11,6 +12,8 @@ import type {
 // Listen for file system changes from the backend watcher.
 listen("fs-changed", () => {
   loadLists();
+  // Debounced sync for WebDAV workspaces on local file changes
+  if (isWebdav) debouncedSync();
 });
 
 // ── Reactive state ───────────────────────────────────────────────────
@@ -22,10 +25,17 @@ let activeListId = $state<string | null>(null);
 let tasks = $state<Task[]>([]);
 let osDark = globalThis.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
 let syncing = $state(false);
-let syncMode = $state<"full" | "push" | "pull">("full");
+let syncStatus = $state<"idle" | "synced" | "error" | "offline">("idle");
 let lastSyncResult = $state<SyncResult | null>(null);
 let error = $state<string | null>(null);
 let missingWorkspace = $state<string | null>(null);
+let lastSyncTime = 0;
+let _syncInterval: ReturnType<typeof setInterval> | null = null;
+let _syncDebounce: ReturnType<typeof setTimeout> | null = null;
+let _focusUnlisten: (() => void) | null = null;
+const SYNC_POLL_MS = 60_000;
+const SYNC_DEBOUNCE_MS = 5_000;
+const SYNC_FOCUS_THRESHOLD_MS = 30_000;
 
 // ── Derived ──────────────────────────────────────────────────────────
 
@@ -64,6 +74,11 @@ let currentTheme = $derived(
 let isDark = $derived(
   currentTheme ? DARK_THEMES.has(currentTheme) : osDark,
 );
+let isWebdav = $derived(
+  config?.current_workspace
+    ? config.workspaces[config.current_workspace]?.mode === "webdav"
+    : false,
+);
 
 // ── Actions ──────────────────────────────────────────────────────────
 
@@ -83,6 +98,7 @@ async function loadConfig() {
       if (lists.length > 0 && !activeListId) activeListId = lists[0].id;
       if (activeListId) await loadTasks();
       screen = "tasks";
+      if (isWebdav) startAutoSync();
     } else {
       screen = "setup";
     }
@@ -114,6 +130,7 @@ async function switchWorkspace(id: string) {
     await loadLists();
     const ws = config?.workspaces[id];
     if (ws) invoke("watch_workspace", { path: ws.path }).catch((e) => console.warn("File watcher failed:", e));
+    if (isWebdav) startAutoSync(); else stopAutoSync();
     error = null;
   } catch (e) {
     error = String(e);
@@ -131,6 +148,7 @@ async function renameWorkspace(id: string, newName: string) {
 }
 
 async function removeWorkspace(id: string) {
+  stopAutoSync();
   try {
     await invoke("remove_workspace", { id });
     config = await invoke<AppConfig>("get_config");
@@ -302,29 +320,46 @@ async function setGroupByDueDate(listId: string, enabled: boolean) {
 }
 
 async function triggerSync() {
-  if (!config?.current_workspace) return;
+  if (!config?.current_workspace || syncing) return;
   syncing = true;
-  error = null;
   try {
     const result = await invoke<SyncResult>("sync_workspace", {
       workspaceId: config.current_workspace,
-      mode: syncMode,
+      mode: "full",
     });
     lastSyncResult = result;
-    if (result.errors.length > 0) {
-      error = result.errors.join("; ");
-    }
+    lastSyncTime = Date.now();
+    syncStatus = result.errors.length > 0 ? "error" : "synced";
+    if (result.errors.length > 0) error = result.errors.join("; ");
     config = await invoke<AppConfig>("get_config");
     await loadLists();
   } catch (e) {
-    error = String(e);
+    const msg = String(e);
+    syncStatus = msg.includes("timeout") || msg.includes("connect") || msg.includes("network") ? "offline" : "error";
+    error = msg;
   } finally {
     syncing = false;
   }
 }
 
-function setSyncMode(mode: "full" | "push" | "pull") {
-  syncMode = mode;
+function debouncedSync() {
+  if (_syncDebounce) clearTimeout(_syncDebounce);
+  _syncDebounce = setTimeout(() => { _syncDebounce = null; triggerSync(); }, SYNC_DEBOUNCE_MS);
+}
+
+function startAutoSync() {
+  stopAutoSync();
+  triggerSync();
+  _syncInterval = setInterval(triggerSync, SYNC_POLL_MS);
+  getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+    if (focused && Date.now() - lastSyncTime > SYNC_FOCUS_THRESHOLD_MS) triggerSync();
+  }).then((unlisten) => { _focusUnlisten = unlisten; });
+}
+
+function stopAutoSync() {
+  if (_syncInterval) { clearInterval(_syncInterval); _syncInterval = null; }
+  if (_syncDebounce) { clearTimeout(_syncDebounce); _syncDebounce = null; }
+  if (_focusUnlisten) { _focusUnlisten(); _focusUnlisten = null; }
 }
 
 async function setTheme(theme: string | null) {
@@ -351,6 +386,7 @@ async function addWebdavWorkspace(name: string, webdavUrl: string, webdavPath: s
     }
     screen = "tasks";
     error = null;
+    if (isWebdav) startAutoSync();
   } catch (e) {
     error = String(e);
   }
@@ -420,8 +456,11 @@ export const app = {
   get syncing() {
     return syncing;
   },
-  get syncMode() {
-    return syncMode;
+  get syncStatus() {
+    return syncStatus;
+  },
+  get isWebdav() {
+    return isWebdav;
   },
   get lastSyncResult() {
     return lastSyncResult;
@@ -455,7 +494,8 @@ export const app = {
   renameList,
   setGroupByDueDate,
   triggerSync,
-  setSyncMode,
+  startAutoSync,
+  stopAutoSync,
   setTheme,
   addWebdavWorkspace,
   forgetMissingWorkspace,

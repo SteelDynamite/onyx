@@ -326,6 +326,34 @@
       </div>
     </div>
 
+    <!-- Drawer footer: sync status -->
+    <div class="shrink-0 border-t border-border-light px-4 py-2.5 dark:border-border-dark">
+      {#if app.isWebdav}
+        <div class="flex items-center gap-2">
+          <!-- Status dot -->
+          <span
+            class="inline-block h-2 w-2 rounded-full {app.syncing ? 'animate-pulse bg-primary' : app.syncStatus === 'synced' || app.syncStatus === 'idle' ? 'bg-green-500' : app.syncStatus === 'error' ? 'bg-red-500' : 'bg-gray-400'}"
+          ></span>
+          <span class="flex-1 text-xs opacity-60">
+            {app.syncing ? "Syncing..." : app.syncStatus === "synced" || app.syncStatus === "idle" ? "Synced" : app.syncStatus === "error" ? "Sync error" : "Offline"}
+          </span>
+          <!-- Manual sync button -->
+          <button
+            onclick={() => app.triggerSync()}
+            disabled={app.syncing}
+            class="rounded-lg p-1.5 hover:bg-black/5 disabled:opacity-30 dark:hover:bg-white/10"
+            title="Sync now"
+          >
+            <svg class="h-4 w-4 {app.syncing ? 'animate-spin' : ''}" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd" />
+            </svg>
+          </button>
+        </div>
+      {:else}
+        <span class="text-xs opacity-40">Local workspace</span>
+      {/if}
+    </div>
+
   </div>
 
   <!-- Main content panel -->
