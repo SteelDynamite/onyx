@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Sha256, Digest};
@@ -7,6 +7,40 @@ use uuid::Uuid;
 use crate::error::{Error, Result};
 use crate::storage::{ListMetadata, TaskFrontmatter};
 use crate::webdav::WebDavClient;
+
+/// File-based lock to prevent concurrent sync operations on the same workspace.
+/// The lock file is automatically removed on drop.
+#[derive(Debug)]
+struct SyncLock {
+    path: PathBuf,
+}
+
+impl SyncLock {
+    fn acquire(workspace_path: &Path) -> Result<Self> {
+        let path = workspace_path.join(".sync.lock");
+        // Check for stale lock (older than 5 minutes)
+        if path.exists() {
+            if let Ok(meta) = std::fs::metadata(&path) {
+                if let Ok(modified) = meta.modified() {
+                    if modified.elapsed().unwrap_or_default() > std::time::Duration::from_secs(300) {
+                        let _ = std::fs::remove_file(&path);
+                    }
+                }
+            }
+        }
+        // Try to create the lock file exclusively
+        match std::fs::OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(_) => Ok(Self { path }),
+            Err(_) => Err(Error::Sync("Another sync operation is already in progress".into())),
+        }
+    }
+}
+
+impl Drop for SyncLock {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
 
 // --- Sync State ---
 
@@ -293,7 +327,10 @@ impl OfflineQueue {
         // Atomic write: write to temp then rename
         let temp_path = workspace_path.join(".syncqueue.json.tmp");
         std::fs::write(&temp_path, &content)?;
-        std::fs::rename(&temp_path, &queue_path)?;
+        if let Err(e) = std::fs::rename(&temp_path, &queue_path) {
+            let _ = std::fs::remove_file(&temp_path);
+            return Err(e.into());
+        }
         Ok(())
     }
 
@@ -483,7 +520,11 @@ impl SyncState {
         // Atomic write: write to temp file then rename to prevent corruption on crash
         let temp_path = workspace_path.join(".syncstate.json.tmp");
         std::fs::write(&temp_path, &content)?;
-        std::fs::rename(&temp_path, &state_path)?;
+        if let Err(e) = std::fs::rename(&temp_path, &state_path) {
+            // Clean up temp file on rename failure to prevent accumulation
+            let _ = std::fs::remove_file(&temp_path);
+            return Err(e.into());
+        }
         Ok(())
     }
 
@@ -535,6 +576,8 @@ async fn sync_workspace_inner(
     mode: SyncMode,
     on_progress: Option<ProgressCallback>,
 ) -> Result<SyncResult> {
+    // Acquire exclusive lock to prevent concurrent syncs
+    let _lock = SyncLock::acquire(workspace_path)?;
     let client = WebDavClient::new(webdav_url, username, password)?;
     let mut sync_state = SyncState::load(workspace_path);
     let queue = OfflineQueue::load(workspace_path);
@@ -614,9 +657,16 @@ async fn sync_workspace_inner(
 }
 
 /// Validate that a sync path doesn't escape the workspace via path traversal.
+/// Rejects `..` components and backslashes (which could bypass validation on Windows
+/// after separator replacement).
 fn validate_sync_path(path: &str) -> Result<()> {
+    // Reject backslashes anywhere in the path — they could be used to bypass
+    // forward-slash-based component splitting on Windows.
+    if path.contains('\\') {
+        return Err(Error::Sync(format!("Path traversal not allowed (backslash): {}", path)));
+    }
     for component in path.split('/') {
-        if component == ".." || component.contains('\\') {
+        if component == ".." {
             return Err(Error::Sync(format!("Path traversal not allowed: {}", path)));
         }
     }
@@ -707,22 +757,26 @@ async fn execute_action(
                         let dup_path = list_dir.join(&dup_filename);
                         std::fs::write(&dup_path, &new_content)?;
 
-                        // Insert new task adjacent to original in .listdata.json
+                        // Insert new task adjacent to original in .listdata.json.
+                        // If metadata update fails, remove the duplicate file to
+                        // avoid orphaned files that are invisible to the app.
                         let listdata_path = list_dir.join(".listdata.json");
                         if listdata_path.exists() {
-                            if let Ok(content) = std::fs::read_to_string(&listdata_path) {
-                                if let Ok(mut metadata) = serde_json::from_str::<ListMetadata>(&content) {
-                                    let insert_pos = metadata.task_order.iter()
-                                        .position(|id| *id == original_id)
-                                        .map(|p| p + 1)
-                                        .unwrap_or(metadata.task_order.len());
-                                    metadata.task_order.insert(insert_pos, new_id);
-                                    if let Ok(json) = serde_json::to_string_pretty(&metadata) {
-                                        if let Err(e) = std::fs::write(&listdata_path, json) {
-                                            eprintln!("Warning: failed to update listdata after conflict recovery: {}", e);
-                                        }
-                                    }
-                                }
+                            let metadata_updated = (|| -> std::result::Result<(), Box<dyn std::error::Error>> {
+                                let content = std::fs::read_to_string(&listdata_path)?;
+                                let mut metadata: ListMetadata = serde_json::from_str(&content)?;
+                                let insert_pos = metadata.task_order.iter()
+                                    .position(|id| *id == original_id)
+                                    .map(|p| p + 1)
+                                    .unwrap_or(metadata.task_order.len());
+                                metadata.task_order.insert(insert_pos, new_id);
+                                let json = serde_json::to_string_pretty(&metadata)?;
+                                std::fs::write(&listdata_path, json)?;
+                                Ok(())
+                            })();
+                            if let Err(e) = metadata_updated {
+                                eprintln!("Warning: failed to update listdata after conflict recovery, removing duplicate: {}", e);
+                                let _ = std::fs::remove_file(&dup_path);
                             }
                         }
 
@@ -776,6 +830,13 @@ fn parse_frontmatter_for_conflict(content: &str) -> Result<(TaskFrontmatter, Str
     let end_idx = lines[1..].iter().position(|&line| line == "---")
         .ok_or_else(|| Error::InvalidData("Missing closing frontmatter delimiter".to_string()))?;
     let frontmatter_str = lines[1..=end_idx].join("\n");
+    // Reject oversized frontmatter to prevent DoS via crafted YAML
+    if frontmatter_str.len() > 64 * 1024 {
+        return Err(Error::InvalidData(format!(
+            "Frontmatter too large ({} bytes, max 65536)",
+            frontmatter_str.len()
+        )));
+    }
     let frontmatter: TaskFrontmatter = serde_yaml::from_str(&frontmatter_str)
         .map_err(|e| Error::Sync(format!("Failed to parse frontmatter: {}", e)))?;
     let description = if end_idx + 2 < lines.len() {
@@ -1256,5 +1317,113 @@ mod tests {
         assert_eq!(path_parent("My Tasks/file.md"), Some("My Tasks"));
         assert_eq!(path_parent("file.md"), None);
         assert_eq!(path_parent("a/b/c.md"), Some("a/b"));
+    }
+
+    // --- validate_sync_path tests ---
+
+    #[test]
+    fn test_validate_sync_path_rejects_dotdot() {
+        assert!(validate_sync_path("../etc/passwd").is_err());
+        assert!(validate_sync_path("list/../secret.md").is_err());
+    }
+
+    #[test]
+    fn test_validate_sync_path_rejects_backslash() {
+        assert!(validate_sync_path("list\\..\\secret.md").is_err());
+        assert!(validate_sync_path("list\\file.md").is_err());
+        assert!(validate_sync_path("a\\b").is_err());
+    }
+
+    #[test]
+    fn test_validate_sync_path_allows_valid_paths() {
+        assert!(validate_sync_path("list/task.md").is_ok());
+        assert!(validate_sync_path(".onyx-workspace.json").is_ok());
+        assert!(validate_sync_path("My Tasks/.listdata.json").is_ok());
+    }
+
+    // --- SyncLock tests ---
+
+    #[test]
+    fn test_sync_lock_prevents_concurrent_access() {
+        let temp_dir = TempDir::new().unwrap();
+        let _lock1 = SyncLock::acquire(temp_dir.path()).unwrap();
+        let result = SyncLock::acquire(temp_dir.path());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("already in progress"));
+    }
+
+    #[test]
+    fn test_sync_lock_released_on_drop() {
+        let temp_dir = TempDir::new().unwrap();
+        {
+            let _lock = SyncLock::acquire(temp_dir.path()).unwrap();
+            // lock held here
+        }
+        // lock dropped — should be able to acquire again
+        let _lock2 = SyncLock::acquire(temp_dir.path()).unwrap();
+    }
+
+    #[test]
+    fn test_sync_lock_file_cleaned_up_on_drop() {
+        let temp_dir = TempDir::new().unwrap();
+        let lock_path = temp_dir.path().join(".sync.lock");
+        {
+            let _lock = SyncLock::acquire(temp_dir.path()).unwrap();
+            assert!(lock_path.exists(), "Lock file should exist while held");
+        }
+        assert!(!lock_path.exists(), "Lock file should be removed after drop");
+    }
+
+    // --- Sync state temp cleanup ---
+
+    #[test]
+    fn test_sync_state_save_load_no_leftover_tmp() {
+        let temp_dir = TempDir::new().unwrap();
+        let state = SyncState {
+            last_sync: Some(Utc::now()),
+            files: HashMap::new(),
+        };
+        state.save(temp_dir.path()).unwrap();
+
+        // Verify no .tmp files remain
+        let tmp_files: Vec<_> = std::fs::read_dir(temp_dir.path()).unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("tmp"))
+            .collect();
+        assert!(tmp_files.is_empty(), "No .tmp files should remain after save");
+    }
+
+    // --- Queue save no leftover tmp ---
+
+    #[test]
+    fn test_queue_save_no_leftover_tmp() {
+        let temp_dir = TempDir::new().unwrap();
+        let queue = OfflineQueue {
+            operations: vec![QueuedOperation {
+                action_type: "upload".to_string(),
+                path: "test.md".to_string(),
+                queued_at: Utc::now(),
+            }],
+        };
+        queue.save(temp_dir.path()).unwrap();
+
+        let tmp_files: Vec<_> = std::fs::read_dir(temp_dir.path()).unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("tmp"))
+            .collect();
+        assert!(tmp_files.is_empty(), "No .tmp files should remain after queue save");
+    }
+
+    // --- Frontmatter size limit in conflict parsing ---
+
+    #[test]
+    fn test_parse_frontmatter_for_conflict_rejects_oversized() {
+        // Create content with frontmatter larger than 64KB
+        let huge_field = "x".repeat(70_000);
+        let content = format!("---\nid: 550e8400-e29b-41d4-a716-446655440000\nstatus: backlog\nversion: 1\nhuge: {}\n---\n\nBody", huge_field);
+        let result = parse_frontmatter_for_conflict(&content);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("too large"), "Error should mention size: {}", err);
     }
 }

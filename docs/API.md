@@ -20,7 +20,7 @@ pub struct Task {
     pub status: TaskStatus,
     pub due_date: Option<DateTime<Utc>>,
     pub has_time: bool,            // Whether due_date includes a specific time
-    pub version: u64,              // Increments on every write; used for sync dedup
+    pub version: u64,              // Increments (saturating) on every write; used for sync dedup
     pub parent_id: Option<Uuid>,
 }
 
@@ -377,8 +377,10 @@ client.delete_file("old-task.md").await?;
 - **Sync state**: Stored in `.syncstate.json` within the workspace directory
 - **Auto-sync**: Periodic polling (configurable `sync_interval_secs`), debounced file-change trigger (5s), window-focus trigger (30s stale threshold)
 - **Response size cap**: PROPFIND responses and file downloads are limited to 10 MB (checked via `Content-Length` header and actual body size) to prevent memory exhaustion from malicious servers
-- **Path traversal protection**: Sync paths are validated to reject `..` and `\` components before any file system operation
-- **Atomic writes**: Sync state (`.syncstate.json`) and offline queue (`.syncqueue.json`) use atomic write pattern (temp file + rename) to prevent corruption on crash
+- **Path traversal protection**: Sync paths are validated to reject `..` components and backslashes anywhere in the path before any file system operation
+- **Concurrent sync lock**: File-based `.sync.lock` prevents overlapping sync operations on the same workspace. Stale locks older than 5 minutes are automatically cleaned up
+- **Atomic writes**: Sync state (`.syncstate.json`) and offline queue (`.syncqueue.json`) use atomic write pattern (temp file + rename, with cleanup on failure) to prevent corruption on crash
+- **Delete ordering**: Delete operations update metadata before removing files, so a crash between steps leaves an orphaned file (recoverable) rather than an orphaned metadata entry
 - **Syncable files**: Only processes files at expected depths — `.onyx-workspace.json` at root (depth 1), `.listdata.json` and `*.md` inside list directories (depth 2)
 
 ## Error Handling
@@ -413,10 +415,11 @@ The storage layer enforces the following limits:
 | List name | 255 characters | `InvalidData` |
 | WebDAV file download | 10 MB | `WebDav` |
 | PROPFIND response | 10 MB | `WebDav` |
+| YAML frontmatter | 65,536 bytes (64 KB) | `InvalidData` |
 
 ### Atomic Writes
 
-All metadata and state files use an atomic write pattern (write to `.tmp` then rename) to prevent data corruption if the process crashes mid-write:
+All metadata and state files use an atomic write pattern (write to `.tmp` then rename) to prevent data corruption if the process crashes mid-write. If the rename step fails, the `.tmp` file is cleaned up to prevent accumulation. Affected files:
 
 - `.onyx-workspace.json` (root metadata)
 - `.listdata.json` (list metadata)
@@ -427,7 +430,7 @@ All metadata and state files use an atomic write pattern (write to `.tmp` then r
 ### Path Safety
 
 - **List names**: Rejected if they contain `/`, `\`, or `..` components. Canonicalized and verified to stay within workspace root.
-- **Sync paths**: Validated to reject `..` and `\` before any file system operation.
+- **Sync paths**: Validated to reject `..` components and backslashes anywhere in the path before any file system operation.
 - **Workspace paths** (Tauri): Rejected if they point to system directories (`/etc`, `/usr`, `/bin`, etc.).
 - **Filenames**: Sanitized to replace `/ \ : * ? " < > |` and control characters with `_`.
 

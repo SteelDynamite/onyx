@@ -13,6 +13,8 @@ const MAX_TITLE_LENGTH: usize = 500;
 const MAX_DESCRIPTION_LENGTH: usize = 1_000_000; // 1 MB
 /// Maximum allowed length for list names.
 const MAX_LIST_NAME_LENGTH: usize = 255;
+/// Maximum allowed size for YAML frontmatter (64 KB) to prevent DoS via crafted files.
+const MAX_FRONTMATTER_LENGTH: usize = 64 * 1024;
 /// Workspace root metadata filename.
 const WORKSPACE_METADATA_FILE: &str = ".onyx-workspace.json";
 /// Per-list metadata filename.
@@ -23,11 +25,15 @@ const TASK_FILE_EXT: &str = "md";
 const DEFAULT_TASK_VERSION: u64 = 1;
 
 /// Write data to a temporary file then atomically rename to the target path.
-/// Prevents corruption from partial writes on crash.
+/// Prevents corruption from partial writes on crash. Cleans up temp file on
+/// rename failure to prevent accumulation.
 fn atomic_write(path: &Path, content: &[u8]) -> std::io::Result<()> {
     let temp = path.with_extension("tmp");
     fs::write(&temp, content)?;
-    fs::rename(&temp, path)?;
+    if let Err(e) = fs::rename(&temp, path) {
+        let _ = fs::remove_file(&temp);
+        return Err(e);
+    }
     Ok(())
 }
 
@@ -279,6 +285,12 @@ impl FileSystemStorage {
 
         let frontmatter_lines = &lines[1..=end_idx];
         let frontmatter_str = frontmatter_lines.join("\n");
+        if frontmatter_str.len() > MAX_FRONTMATTER_LENGTH {
+            return Err(Error::InvalidData(format!(
+                "Frontmatter too large ({} bytes, max {})",
+                frontmatter_str.len(), MAX_FRONTMATTER_LENGTH
+            )));
+        }
         let frontmatter: TaskFrontmatter = serde_yaml::from_str(&frontmatter_str)?;
 
         let description = if end_idx + 2 < lines.len() {
@@ -292,7 +304,7 @@ impl FileSystemStorage {
 
     fn write_markdown_with_frontmatter(&self, task: &Task) -> Result<String> {
         let mut frontmatter = TaskFrontmatter::from(task);
-        frontmatter.version = task.version + 1;
+        frontmatter.version = task.version.saturating_add(1);
         let yaml = serde_yaml::to_string(&frontmatter)?;
 
         let mut content = String::new();
@@ -407,13 +419,14 @@ impl Storage for FileSystemStorage {
         let list_dir = self.list_dir_path(list_id)?;
         let task_path = self.task_file_path(&list_dir, &task);
 
-        fs::remove_file(&task_path)?;
-
-        // Remove from task_order
+        // Update metadata first so a crash between steps leaves an orphaned file
+        // (recoverable) rather than an orphaned metadata entry (confusing).
         let mut list_metadata = self.read_list_metadata(list_id)?;
         list_metadata.task_order.retain(|&id| id != task_id);
         list_metadata.updated_at = Utc::now();
         self.write_list_metadata(&list_metadata)?;
+
+        fs::remove_file(&task_path)?;
 
         Ok(())
     }
@@ -453,7 +466,9 @@ impl Storage for FileSystemStorage {
             }
         }
 
-        // Self-healing dedup: group by UUID, keep highest version, delete stale files
+        // Self-healing dedup: group by UUID, keep highest version, delete stale files.
+        // When versions are equal, keep the file with the latest filesystem modification
+        // time to avoid non-deterministic selection.
         let mut by_id: HashMap<Uuid, Vec<(PathBuf, Task)>> = HashMap::new();
         for entry in file_tasks {
             by_id.entry(entry.1.id).or_default().push(entry);
@@ -462,7 +477,17 @@ impl Storage for FileSystemStorage {
         let mut tasks = Vec::new();
         for (_id, mut entries) in by_id {
             if entries.len() > 1 {
-                entries.sort_by(|a, b| b.1.version.cmp(&a.1.version));
+                entries.sort_by(|a, b| {
+                    // Primary: highest version first
+                    let version_cmp = b.1.version.cmp(&a.1.version);
+                    if version_cmp != std::cmp::Ordering::Equal {
+                        return version_cmp;
+                    }
+                    // Tiebreaker: most recently modified file first
+                    let mtime_a = fs::metadata(&a.0).and_then(|m| m.modified()).ok();
+                    let mtime_b = fs::metadata(&b.0).and_then(|m| m.modified()).ok();
+                    mtime_b.cmp(&mtime_a)
+                });
                 for (stale_path, _) in entries.drain(1..) {
                     if let Err(e) = fs::remove_file(&stale_path) {
                         eprintln!("Warning: failed to remove stale duplicate task file {:?}: {}", stale_path, e);
@@ -580,15 +605,16 @@ impl Storage for FileSystemStorage {
     fn delete_list(&mut self, list_id: Uuid) -> Result<()> {
         let list_dir = self.list_dir_path(list_id)?;
 
-        fs::remove_dir_all(&list_dir)?;
-
-        // Remove from root metadata
+        // Update root metadata first so a crash between steps leaves an orphaned
+        // directory (recoverable) rather than an orphaned metadata entry.
         let mut root_metadata = self.read_root_metadata_internal()?;
         root_metadata.list_order.retain(|&id| id != list_id);
         if root_metadata.last_opened_list == Some(list_id) {
             root_metadata.last_opened_list = root_metadata.list_order.first().copied();
         }
         self.write_root_metadata_internal(&root_metadata)?;
+
+        fs::remove_dir_all(&list_dir)?;
 
         Ok(())
     }
@@ -1006,12 +1032,149 @@ mod tests {
         let tasks = storage.list_tasks(list.id).unwrap();
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].id, task_id);
-        // The winner should be the one written by write_task (version 1), not the manually created stale copy (also version 1 but alphabetically second)
-        // Actually both are version 1, so the first sorted wins — but the stale file should be cleaned up
-        // Let's verify only one .md file remains
+        // Both are version 1, so mtime tiebreaker picks the most recent file.
+        // Verify only one .md file remains.
         let md_count = fs::read_dir(&list_dir).unwrap()
             .filter(|e| e.as_ref().unwrap().path().extension().and_then(|s| s.to_str()) == Some("md"))
             .count();
         assert_eq!(md_count, 1);
+    }
+
+    // --- Deduplication mtime tiebreaker ---
+
+    #[test]
+    fn test_dedup_equal_versions_uses_mtime_tiebreaker() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut storage = init_storage(&temp_dir);
+        let list = storage.create_list("Dedup2".to_string()).unwrap();
+
+        let task_id = uuid::Uuid::new_v4();
+        let list_dir = storage.list_dir_path(list.id).unwrap();
+
+        // Create two files with the same UUID and same version (1)
+        let content_a = format!(
+            "---\nid: {}\nstatus: backlog\nversion: 1\n---\n\nVersion A (older)",
+            task_id
+        );
+        let content_b = format!(
+            "---\nid: {}\nstatus: backlog\nversion: 1\n---\n\nVersion B (newer)",
+            task_id
+        );
+
+        let path_a = list_dir.join("TaskA.md");
+        let path_b = list_dir.join("TaskB.md");
+        fs::write(&path_a, &content_a).unwrap();
+        // Sleep briefly so mtime differs
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        fs::write(&path_b, &content_b).unwrap();
+
+        let tasks = storage.list_tasks(list.id).unwrap();
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].id, task_id);
+        // The newer file (B) should win the mtime tiebreaker
+        assert_eq!(tasks[0].description, "Version B (newer)");
+
+        // Verify only one .md file remains
+        let md_count = fs::read_dir(&list_dir).unwrap()
+            .filter(|e| e.as_ref().unwrap().path().extension().and_then(|s| s.to_str()) == Some("md"))
+            .count();
+        assert_eq!(md_count, 1);
+    }
+
+    // --- Frontmatter size limit ---
+
+    #[test]
+    fn test_parse_frontmatter_rejects_oversized() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = init_storage(&temp_dir);
+
+        // Create content with frontmatter larger than 64KB
+        let huge = "x".repeat(70_000);
+        let content = format!(
+            "---\nid: 550e8400-e29b-41d4-a716-446655440000\nstatus: backlog\nversion: 1\nhuge: {}\n---\n\nBody",
+            huge
+        );
+        let result = storage.parse_markdown_with_frontmatter(&content);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("too large"), "Error should mention size: {}", err);
+    }
+
+    #[test]
+    fn test_parse_frontmatter_accepts_normal_size() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = init_storage(&temp_dir);
+
+        let content = "---\nid: 550e8400-e29b-41d4-a716-446655440000\nstatus: backlog\nversion: 1\n---\n\nDescription";
+        let result = storage.parse_markdown_with_frontmatter(content);
+        assert!(result.is_ok());
+    }
+
+    // --- Version saturating_add ---
+
+    #[test]
+    fn test_version_saturates_at_max() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut storage = init_storage(&temp_dir);
+        let list = storage.create_list("MaxVer".to_string()).unwrap();
+
+        let mut task = Task::new("Saturate".to_string());
+        task.version = u64::MAX - 1;
+
+        storage.write_task(list.id, &task).unwrap();
+        let read_back = storage.read_task(list.id, task.id).unwrap();
+        assert_eq!(read_back.version, u64::MAX, "Version should saturate at u64::MAX");
+
+        // Writing again should not panic or wrap
+        storage.write_task(list.id, &read_back).unwrap();
+        let read_again = storage.read_task(list.id, task.id).unwrap();
+        assert_eq!(read_again.version, u64::MAX, "Version should stay at u64::MAX");
+    }
+
+    // --- Delete ordering: metadata before file ---
+
+    #[test]
+    fn test_delete_task_removes_from_metadata_first() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut storage = init_storage(&temp_dir);
+        let list = storage.create_list("DelOrder".to_string()).unwrap();
+
+        let task = Task::new("ToDelete".to_string());
+        let task_id = task.id;
+        storage.write_task(list.id, &task).unwrap();
+
+        // Verify task is in metadata
+        let meta = storage.read_list_metadata(list.id).unwrap();
+        assert!(meta.task_order.contains(&task_id));
+
+        // Delete
+        storage.delete_task(list.id, task_id).unwrap();
+
+        // Verify metadata no longer contains the task
+        let meta_after = storage.read_list_metadata(list.id).unwrap();
+        assert!(!meta_after.task_order.contains(&task_id));
+
+        // Verify file is also gone
+        let list_dir = storage.list_dir_path(list.id).unwrap();
+        let md_count = fs::read_dir(&list_dir).unwrap()
+            .filter(|e| e.as_ref().unwrap().path().extension().and_then(|s| s.to_str()) == Some("md"))
+            .count();
+        assert_eq!(md_count, 0);
+    }
+
+    // --- Atomic write no leftover tmp ---
+
+    #[test]
+    fn test_atomic_write_no_leftover_tmp() {
+        let temp_dir = TempDir::new().unwrap();
+        let target = temp_dir.path().join("test.json");
+        atomic_write(&target, b"hello").unwrap();
+
+        let tmp_files: Vec<_> = fs::read_dir(temp_dir.path()).unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("tmp"))
+            .collect();
+        assert!(tmp_files.is_empty(), "No .tmp files should remain after atomic_write");
+        assert_eq!(fs::read_to_string(&target).unwrap(), "hello");
     }
 }

@@ -79,7 +79,12 @@ impl TaskRepository {
         // If delete from source fails, roll back by removing the copy from destination
         if let Err(e) = self.storage.delete_task(from_list_id, task_id) {
             if let Err(rollback_err) = self.storage.delete_task(to_list_id, task_id) {
-                eprintln!("Warning: move_task rollback failed: {}", rollback_err);
+                // Rollback failed — task now exists in both lists.
+                // Return an error describing the inconsistent state.
+                return Err(Error::InvalidData(format!(
+                    "move_task failed and rollback also failed: original error: {}, rollback error: {}. Task {} may exist in both lists.",
+                    e, rollback_err, task_id
+                )));
             }
             return Err(e);
         }

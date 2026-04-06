@@ -35,15 +35,15 @@ Two-crate workspace (`resolver = "2"`, edition 2021) plus a Tauri app:
 
 ### Key patterns
 
-- **Storage trait** (`storage.rs`): Strategy pattern for task persistence. `FileSystemStorage` reads/writes markdown files with YAML frontmatter and JSON metadata files. Atomic writes (temp file + rename) for all metadata files. Input validation: task titles max 500 chars, descriptions max 1MB, list names max 255 chars.
+- **Storage trait** (`storage.rs`): Strategy pattern for task persistence. `FileSystemStorage` reads/writes markdown files with YAML frontmatter and JSON metadata files. Atomic writes (temp file + rename, with temp cleanup on failure) for all metadata files. Input validation: task titles max 500 chars, descriptions max 1MB, list names max 255 chars, YAML frontmatter max 64KB. Delete operations update metadata before removing files to prevent orphaned metadata on crash.
 - **Repository** (`repository.rs`): `TaskRepository` wraps a `Storage` impl and provides the public API for task/list CRUD, ordering, and grouping. Tests live here.
 - **Config** (`config.rs`): `AppConfig` manages workspaces keyed by UUID string. `WorkspaceConfig` stores `name`, `path`, `mode` (Local/Webdav), `webdav_url`, `webdav_path` (user-selected remote folder), `theme`, and `sync_interval_secs`. `add_workspace` returns a generated UUID. Stored in platform-specific config dirs via the `directories` crate. Atomic writes (temp file + rename) prevent corruption on crash.
-- **Sync** (`sync.rs`): Three-way diff sync with offline queue. Checksum-based conflict resolution: downloads remote, compares SHA-256 — identical content is a false conflict (skipped); when different, remote wins and local is recovered as a duplicate with a new UUID and `[RECOVERED FROM CONFLICT]` prefix. Auto-sync lifecycle: periodic polling (configurable interval, default 60s), debounced file-change (5s), window-focus (30s stale threshold). Wrapped in `tokio::time::timeout` (60s) to handle unreachable servers on Windows. Path traversal validation on all sync paths. Atomic writes for sync state and queue files.
+- **Sync** (`sync.rs`): Three-way diff sync with offline queue. File-based `.sync.lock` prevents concurrent sync operations (auto-cleaned after 5 minutes if stale). Checksum-based conflict resolution: downloads remote, compares SHA-256 — identical content is a false conflict (skipped); when different, remote wins and local is recovered as a duplicate with a new UUID and `[RECOVERED FROM CONFLICT]` prefix (duplicate file cleaned up if metadata update fails). Auto-sync lifecycle: periodic polling (configurable interval, default 60s), debounced file-change (5s), window-focus (30s stale threshold). Wrapped in `tokio::time::timeout` (60s) to handle unreachable servers on Windows. Path traversal validation rejects `..` components and backslashes anywhere in sync paths. Atomic writes for sync state and queue files (temp cleanup on failure).
 - **WebDAV** (`webdav.rs`): reqwest client with rustls-tls, 30s request timeout, 10s connect timeout. Rejects non-HTTPS URLs. `Zeroizing<String>` for credential fields. `move_resource` method for WebDAV MOVE (workspace rename). 10MB cap on both PROPFIND responses and file downloads. Desktop credentials via `keyring` crate (feature-gated); Tauri GUI uses `tauri-plugin-credentials` for cross-platform support (Android Keystore + desktop keychain).
 
 ### On-disk format
 
-Workspaces are plain folders. Each task list is a subfolder containing `.listdata.json` (metadata/ordering) and one `.md` file per task. The workspace root has `.onyx-workspace.json` for list ordering and workspace detection. Sync only processes files at expected depths: `.onyx-workspace.json` at root, `.listdata.json` and `*.md` inside list directories. Task frontmatter contains `id`, `status`, `version` (u64, increments on every write, defaults to 1 for legacy files), and optionally `due`, `has_time`, `parent` (omitted when false/null). `list_tasks` auto-deduplicates by UUID, keeping the highest-version file and deleting stale copies.
+Workspaces are plain folders. Each task list is a subfolder containing `.listdata.json` (metadata/ordering) and one `.md` file per task. The workspace root has `.onyx-workspace.json` for list ordering and workspace detection. Sync only processes files at expected depths: `.onyx-workspace.json` at root, `.listdata.json` and `*.md` inside list directories. Task frontmatter contains `id`, `status`, `version` (u64, increments via `saturating_add` on every write, defaults to 1 for legacy files), and optionally `due`, `has_time`, `parent` (omitted when false/null). `list_tasks` auto-deduplicates by UUID, keeping the highest-version file and deleting stale copies; when versions are equal, filesystem modification time is used as a tiebreaker.
 
 ### Tauri GUI structure
 
@@ -95,7 +95,7 @@ Pre-alpha. No users, no released builds, no data to migrate. Breaking changes to
 - Per-workspace sync interval (configurable in settings)
 - Upload/download counts in drawer footer (hidden when zero)
 - Transient sync error suppression (connectivity issues update status dot only, no error banner)
-- File watcher (notify crate, 500ms debounce, auto-reloads on external changes)
+- File watcher (notify crate, 500ms debounce, auto-reloads on external changes, emits `watcher-error` event to frontend on failures)
 - WorkspaceMode enum (local/webdav) with per-workspace config, UUID-keyed workspaces
 - Workspace rename (local folder rename + WebDAV MOVE for remote folders, with confirmation dialog)
 - Desktop packaging (Linux: AppImage + .deb; Windows: MSI)
@@ -106,6 +106,7 @@ Pre-alpha. No users, no released builds, no data to migrate. Breaking changes to
 - Custom confirmation dialogs (ConfirmDialog component replaces native confirm())
 - Workspace path validation (rejects system directories)
 - Task detail auto-cleanup (taskStack clears when viewed task is deleted or list switches)
+- Accessibility: ARIA labels/roles on interactive components, keyboard handlers, `prefers-reduced-motion` CSS support
 
 ### GUI features NOT yet done
 

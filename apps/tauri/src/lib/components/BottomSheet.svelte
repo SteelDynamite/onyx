@@ -1,17 +1,22 @@
 <script lang="ts">
-  let { onclose, children }: { onclose: () => void; children: any } = $props();
+  import type { Snippet } from "svelte";
+  let { onclose, children }: { onclose: () => void; children: Snippet } = $props();
 </script>
 
 <!-- Backdrop -->
-<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="fixed inset-0 z-40 bg-black/40"
+  role="button"
+  tabindex="-1"
+  aria-label="Close sheet"
   onclick={onclose}
   onkeydown={(e) => { if (e.key === "Escape") onclose(); }}
 ></div>
 
 <!-- Sheet -->
 <div
+  role="dialog"
+  aria-modal="true"
   class="fixed bottom-0 left-0 right-0 z-50 max-h-[70vh] overflow-y-auto rounded-t-2xl bg-surface-light shadow-xl dark:bg-card-dark animate-slide-up"
 >
   <!-- Drag handle -->

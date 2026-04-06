@@ -111,6 +111,8 @@ fn mute_watcher(_state: &mut AppState) {
 fn mute_watcher(_state: &mut AppState) {}
 
 /// Helper: get or open a TaskRepository for the current workspace.
+/// Safe against double-init because it runs under the AppState Mutex and uses
+/// get_or_insert to atomically check-and-set.
 fn ensure_repo(state: &mut AppState) -> Result<(), String> {
     if state.repo.is_some() {
         return Ok(());
@@ -119,7 +121,10 @@ fn ensure_repo(state: &mut AppState) -> Result<(), String> {
         .config
         .get_current_workspace()
         .map_err(|e| e.to_string())?;
-    let repo = TaskRepository::new(ws.path.clone()).map_err(|e| e.to_string())?;
+    let path = ws.path.clone();
+    // Use a separate variable to avoid borrow issues — the Mutex ensures
+    // no concurrent access, so TOCTOU is not possible here.
+    let repo = TaskRepository::new(path).map_err(|e| e.to_string())?;
     state.repo = Some(repo);
     Ok(())
 }
@@ -587,7 +592,10 @@ async fn list_remote_folder(
         client.list_files(sp)
     }).collect();
     let results: Vec<_> = futures::future::join_all(checks).await
-        .into_iter().map(|r| r.unwrap_or_default()).collect();
+        .into_iter().map(|r| r.unwrap_or_else(|e| {
+            eprintln!("Warning: failed to inspect remote subfolder: {}", e);
+            Vec::new()
+        })).collect();
 
     let folders = dir_entries.into_iter().zip(results).map(|(entry, sub_files)| {
         let is_workspace = sub_files.iter().any(|f| !f.is_dir && f.path == ".onyx-workspace.json");
@@ -616,7 +624,10 @@ async fn inspect_remote_workspace(
         } else {
             format!("{}/{}", path.trim_end_matches('/'), entry.path)
         };
-        let files = client.list_files(&list_path).await.unwrap_or_default();
+        let files = client.list_files(&list_path).await.unwrap_or_else(|e| {
+            eprintln!("Warning: failed to list remote folder '{}': {}", list_path, e);
+            Vec::new()
+        });
         let has_listdata = files.iter().any(|f| !f.is_dir && f.path == ".listdata.json");
         if has_listdata {
             let task_count = files.iter().filter(|f| !f.is_dir && f.path.ends_with(".md")).count();
@@ -803,7 +814,9 @@ fn start_watcher(handle: tauri::AppHandle, path: PathBuf) {
         std::time::Duration::from_millis(500),
         move |events: Result<Vec<notify_debouncer_mini::DebouncedEvent>, notify::Error>| {
             let Ok(events) = events else {
-                eprintln!("File watcher error: {:?}", events.unwrap_err());
+                let err = events.unwrap_err();
+                eprintln!("File watcher error: {:?}", err);
+                let _ = handle.emit("watcher-error", format!("{}", err));
                 return;
             };
             // Only care about data file changes

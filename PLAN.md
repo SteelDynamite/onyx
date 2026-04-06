@@ -86,7 +86,7 @@ Task {
     status: TaskStatus,         // Backlog or Completed
     due_date: Option<DateTime>,
     has_time: bool,             // Whether due_date includes a specific time
-    version: u64,               // Increments on every write; used for sync dedup
+    version: u64,               // Increments (saturating) on every write; used for sync dedup
     parent_id: Option<Uuid>,    // For subtasks
 }
 
