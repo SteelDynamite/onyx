@@ -395,7 +395,7 @@
     </div>
 
     <!-- Drawer footer: sync status -->
-    <div class="shrink-0 px-4 py-2.5" style="padding-bottom: max(0.625rem, var(--safe-bottom))">
+    <div class="shrink-0 px-4 py-2.5" style="padding-bottom: max(1.25rem, var(--safe-bottom))">
       {#if app.isWebdav}
         <div class="flex items-center gap-2">
           <!-- Status dot -->
@@ -563,7 +563,7 @@
         </div>
 
         <!-- Task list -->
-        <main class="flex-1 overflow-y-auto">
+        <main class="flex-1 overflow-y-auto" style="padding-bottom: max(6rem, var(--safe-bottom))">
           {#key app.activeListId}
           {#if app.lists.length === 0}
             <div class="flex h-full flex-col items-center justify-center p-8 text-center">
