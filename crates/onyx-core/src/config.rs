@@ -115,7 +115,10 @@ impl AppConfig {
             std::fs::create_dir_all(parent)?;
         }
         let content = serde_json::to_string_pretty(&self)?;
-        std::fs::write(path, content)?;
+        // Atomic write: write to temp file then rename to prevent corruption on crash
+        let temp = path.with_extension("tmp");
+        std::fs::write(&temp, &content)?;
+        std::fs::rename(&temp, path)?;
         Ok(())
     }
 

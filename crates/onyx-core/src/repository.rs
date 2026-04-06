@@ -78,7 +78,9 @@ impl TaskRepository {
         self.storage.write_task(to_list_id, &task)?;
         // If delete from source fails, roll back by removing the copy from destination
         if let Err(e) = self.storage.delete_task(from_list_id, task_id) {
-            let _ = self.storage.delete_task(to_list_id, task_id);
+            if let Err(rollback_err) = self.storage.delete_task(to_list_id, task_id) {
+                eprintln!("Warning: move_task rollback failed: {}", rollback_err);
+            }
             return Err(e);
         }
         Ok(())

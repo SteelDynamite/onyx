@@ -265,7 +265,9 @@ impl OfflineQueue {
                 Err(e) => {
                     eprintln!("Warning: corrupt sync queue, backing up and resetting: {}", e);
                     let backup = workspace_path.join(".syncqueue.json.bak");
-                    let _ = std::fs::copy(&queue_path, &backup);
+                    if let Err(backup_err) = std::fs::copy(&queue_path, &backup) {
+                        eprintln!("Warning: failed to backup corrupt sync queue: {}", backup_err);
+                    }
                     Self::default()
                 }
             },
@@ -281,12 +283,17 @@ impl OfflineQueue {
         if self.operations.is_empty() {
             // Clean up empty queue file
             if queue_path.exists() {
-                let _ = std::fs::remove_file(&queue_path);
+                if let Err(e) = std::fs::remove_file(&queue_path) {
+                    eprintln!("Warning: failed to remove empty sync queue file: {}", e);
+                }
             }
             return Ok(());
         }
         let content = serde_json::to_string_pretty(self)?;
-        std::fs::write(&queue_path, content)?;
+        // Atomic write: write to temp then rename
+        let temp_path = workspace_path.join(".syncqueue.json.tmp");
+        std::fs::write(&temp_path, &content)?;
+        std::fs::rename(&temp_path, &queue_path)?;
         Ok(())
     }
 
@@ -349,16 +356,21 @@ pub fn compute_checksum(data: &[u8]) -> String {
     format!("{:x}", hasher.finalize())
 }
 
+/// Workspace root metadata filename.
+const WORKSPACE_METADATA_FILE: &str = ".onyx-workspace.json";
+/// Per-list metadata filename.
+const LIST_METADATA_FILE: &str = ".listdata.json";
+
 /// Check if a file is syncable: *.md files and metadata files at expected depths.
 fn is_syncable(path: &str) -> bool {
     let parts: Vec<&str> = path.split('/').collect();
     let filename = parts.last().copied().unwrap_or(path);
     // .onyx-workspace.json only at workspace root (depth 1)
-    if filename == ".onyx-workspace.json" {
+    if filename == WORKSPACE_METADATA_FILE {
         return parts.len() == 1;
     }
     // .listdata.json only inside a list directory (depth 2)
-    if filename == ".listdata.json" {
+    if filename == LIST_METADATA_FILE {
         return parts.len() == 2;
     }
     // .md files inside a list directory (depth 2)
@@ -451,15 +463,27 @@ impl SyncState {
             return Self::default();
         }
         match std::fs::read_to_string(&state_path) {
-            Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
-            Err(_) => Self::default(),
+            Ok(content) => match serde_json::from_str(&content) {
+                Ok(state) => state,
+                Err(e) => {
+                    eprintln!("Warning: corrupt sync state file, resetting: {}", e);
+                    Self::default()
+                }
+            },
+            Err(e) => {
+                eprintln!("Warning: failed to read sync state file: {}", e);
+                Self::default()
+            }
         }
     }
 
     pub fn save(&self, workspace_path: &Path) -> Result<()> {
         let state_path = workspace_path.join(".syncstate.json");
         let content = serde_json::to_string_pretty(self)?;
-        std::fs::write(&state_path, content)?;
+        // Atomic write: write to temp file then rename to prevent corruption on crash
+        let temp_path = workspace_path.join(".syncstate.json.tmp");
+        std::fs::write(&temp_path, &content)?;
+        std::fs::rename(&temp_path, &state_path)?;
         Ok(())
     }
 
@@ -589,6 +613,16 @@ async fn sync_workspace_inner(
     Ok(result)
 }
 
+/// Validate that a sync path doesn't escape the workspace via path traversal.
+fn validate_sync_path(path: &str) -> Result<()> {
+    for component in path.split('/') {
+        if component == ".." || component.contains('\\') {
+            return Err(Error::Sync(format!("Path traversal not allowed: {}", path)));
+        }
+    }
+    Ok(())
+}
+
 /// Execute a single sync action.
 async fn execute_action(
     client: &WebDavClient,
@@ -598,6 +632,9 @@ async fn execute_action(
     remote_meta: &HashMap<&str, &RemoteFileSnapshot>,
     report: &(dyn Fn(&str) + Send + Sync),
 ) -> Result<()> {
+    // Validate path before any file system operation
+    validate_sync_path(action.path())?;
+
     match action {
         SyncAction::Upload { path } => {
             let local_path = workspace_path.join(path.replace('/', std::path::MAIN_SEPARATOR_STR));
@@ -681,7 +718,9 @@ async fn execute_action(
                                         .unwrap_or(metadata.task_order.len());
                                     metadata.task_order.insert(insert_pos, new_id);
                                     if let Ok(json) = serde_json::to_string_pretty(&metadata) {
-                                        let _ = std::fs::write(&listdata_path, json);
+                                        if let Err(e) = std::fs::write(&listdata_path, json) {
+                                            eprintln!("Warning: failed to update listdata after conflict recovery: {}", e);
+                                        }
                                     }
                                 }
                             }

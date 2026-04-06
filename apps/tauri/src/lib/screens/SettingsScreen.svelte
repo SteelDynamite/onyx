@@ -26,7 +26,9 @@
       invoke<[string, string]>("load_credentials", { domain }).then(([u, p]) => {
         webdavUser = u;
         webdavPass = p;
-      }).catch(() => {});
+      }).catch((e) => {
+        console.warn("Failed to load credentials:", e);
+      });
     } catch {}
   });
 
