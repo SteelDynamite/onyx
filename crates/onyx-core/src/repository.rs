@@ -447,6 +447,78 @@ mod tests {
     }
 
     #[test]
+    fn test_create_task_increments_version() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut repo = TaskRepository::init(temp_dir.path().to_path_buf()).unwrap();
+        let list = repo.create_list("Test".to_string()).unwrap();
+
+        let task = Task::new("V".to_string());
+        assert_eq!(task.version, 0);
+        let created = repo.create_task(list.id, task).unwrap();
+        assert_eq!(created.version, 1);
+    }
+
+    #[test]
+    fn test_move_task_nonexistent_task() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut repo = TaskRepository::init(temp_dir.path().to_path_buf()).unwrap();
+        let list_a = repo.create_list("A".to_string()).unwrap();
+        let list_b = repo.create_list("B".to_string()).unwrap();
+
+        let result = repo.move_task(list_a.id, list_b.id, Uuid::new_v4());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_move_task_preserves_task_data() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut repo = TaskRepository::init(temp_dir.path().to_path_buf()).unwrap();
+        let list_a = repo.create_list("A".to_string()).unwrap();
+        let list_b = repo.create_list("B".to_string()).unwrap();
+
+        let task = Task::new("Rich Task".to_string())
+            .with_description("Important notes".to_string());
+        let task = repo.create_task(list_a.id, task).unwrap();
+        let task_id = task.id;
+
+        repo.move_task(list_a.id, list_b.id, task_id).unwrap();
+
+        let moved = repo.get_task(list_b.id, task_id).unwrap();
+        assert_eq!(moved.title, "Rich Task");
+        assert_eq!(moved.description, "Important notes");
+    }
+
+    #[test]
+    fn test_subtask_creation_and_retrieval() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut repo = TaskRepository::init(temp_dir.path().to_path_buf()).unwrap();
+        let list = repo.create_list("Test".to_string()).unwrap();
+
+        let parent = repo.create_task(list.id, Task::new("Parent".to_string())).unwrap();
+        let child = Task::new("Child".to_string()).with_parent(parent.id);
+        let child = repo.create_task(list.id, child).unwrap();
+
+        let retrieved = repo.get_task(list.id, child.id).unwrap();
+        assert_eq!(retrieved.parent_id, Some(parent.id));
+    }
+
+    #[test]
+    fn test_multiple_lists_independent() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut repo = TaskRepository::init(temp_dir.path().to_path_buf()).unwrap();
+
+        let list_a = repo.create_list("A".to_string()).unwrap();
+        let list_b = repo.create_list("B".to_string()).unwrap();
+
+        repo.create_task(list_a.id, Task::new("Task A1".to_string())).unwrap();
+        repo.create_task(list_a.id, Task::new("Task A2".to_string())).unwrap();
+        repo.create_task(list_b.id, Task::new("Task B1".to_string())).unwrap();
+
+        assert_eq!(repo.list_tasks(list_a.id).unwrap().len(), 2);
+        assert_eq!(repo.list_tasks(list_b.id).unwrap().len(), 1);
+    }
+
+    #[test]
     fn test_task_order_after_delete() {
         let temp_dir = TempDir::new().unwrap();
         let mut repo = TaskRepository::init(temp_dir.path().to_path_buf()).unwrap();
