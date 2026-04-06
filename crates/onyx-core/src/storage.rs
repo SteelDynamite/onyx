@@ -133,7 +133,33 @@ impl FileSystemStorage {
         if !root_path.exists() {
             return Err(Error::NotFound(format!("Path does not exist: {:?}", root_path)));
         }
-        Ok(Self { root_path })
+        let storage = Self { root_path };
+        storage.cleanup_stale_tmp_files();
+        Ok(storage)
+    }
+
+    /// Remove leftover .tmp files from interrupted atomic writes.
+    fn cleanup_stale_tmp_files(&self) {
+        let cleanup_dir = |dir: &Path| {
+            if let Ok(entries) = fs::read_dir(dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.extension().and_then(|e| e.to_str()) == Some("tmp") {
+                        let _ = fs::remove_file(&path);
+                    }
+                }
+            }
+        };
+        // Clean root-level .tmp files
+        cleanup_dir(&self.root_path);
+        // Clean .tmp files inside list directories
+        if let Ok(entries) = fs::read_dir(&self.root_path) {
+            for entry in entries.flatten() {
+                if entry.path().is_dir() {
+                    cleanup_dir(&entry.path());
+                }
+            }
+        }
     }
 
     pub fn init(root_path: PathBuf) -> Result<Self> {
@@ -181,11 +207,19 @@ impl FileSystemStorage {
             return Err(Error::InvalidData("Invalid list name: path traversal not allowed".to_string()));
         }
         let path = self.root_path.join(name);
-        // Verify resolved path stays within root
+        // Verify resolved path stays within root.
+        // Always build canonical_path from canonical_root + filename to avoid TOCTOU
+        // races and symlink escapes (canonicalize resolves symlinks, so a symlink
+        // pointing outside the workspace would be caught).
         let canonical_root = self.root_path.canonicalize()
             .map_err(Error::Io)?;
         let canonical_path = if path.exists() {
-            path.canonicalize().map_err(Error::Io)?
+            let resolved = path.canonicalize().map_err(Error::Io)?;
+            // Re-check after canonicalization to catch symlinks pointing outside
+            if !resolved.starts_with(&canonical_root) {
+                return Err(Error::InvalidData("Invalid list name: path escapes workspace".to_string()));
+            }
+            resolved
         } else {
             // Parent must exist and be canonicalizable (it's root_path)
             canonical_root.join(path.file_name().unwrap_or_default())
@@ -197,7 +231,7 @@ impl FileSystemStorage {
     }
 
     fn sanitize_filename(name: &str) -> String {
-        name.chars()
+        let sanitized: String = name.chars()
             .map(|c| match c {
                 '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
                 '\0'..='\x1f' => '_',
@@ -205,7 +239,19 @@ impl FileSystemStorage {
             })
             .collect::<String>()
             .trim_matches(|c: char| c == '.' || c == ' ')
-            .to_string()
+            .to_string();
+        // Reject Windows reserved device names (CON, PRN, AUX, NUL, COM0-9, LPT0-9)
+        let stem = sanitized.split('.').next().unwrap_or("").to_uppercase();
+        let is_reserved = matches!(stem.as_str(),
+            "CON" | "PRN" | "AUX" | "NUL"
+            | "COM0" | "COM1" | "COM2" | "COM3" | "COM4" | "COM5" | "COM6" | "COM7" | "COM8" | "COM9"
+            | "LPT0" | "LPT1" | "LPT2" | "LPT3" | "LPT4" | "LPT5" | "LPT6" | "LPT7" | "LPT8" | "LPT9"
+        );
+        if is_reserved {
+            format!("_{}", sanitized)
+        } else {
+            sanitized
+        }
     }
 
     fn task_file_path(&self, list_dir: &Path, task: &Task) -> PathBuf {
