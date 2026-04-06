@@ -18,7 +18,7 @@
     if (!title.trim()) return;
     const created = await app.createTask(title.trim(), description.trim() || undefined);
     if (dueDate && created) {
-      await app.updateTask({ ...created, due_date: dueDate, has_time: dueDateHasTime, updated_at: new Date().toISOString() });
+      await app.updateTask({ ...created, due_date: dueDate, has_time: dueDateHasTime });
     }
     title = "";
     description = "";

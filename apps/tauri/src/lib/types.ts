@@ -5,8 +5,7 @@ export interface Task {
   status: "backlog" | "completed";
   due_date: string | null;
   has_time: boolean;
-  created_at: string;
-  updated_at: string;
+  version: number;
   parent_id: string | null;
 }
 

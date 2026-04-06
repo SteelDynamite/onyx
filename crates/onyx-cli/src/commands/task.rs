@@ -192,7 +192,6 @@ pub fn edit(task_id_str: String, workspace: Option<String>) -> Result<()> {
     let mut updated_task = task.clone();
     updated_task.title = title;
     updated_task.description = description;
-    updated_task.updated_at = Utc::now();
 
     repo.update_task(list_id, updated_task.clone())
         .context("Failed to update task")?;
