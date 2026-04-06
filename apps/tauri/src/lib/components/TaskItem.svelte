@@ -111,11 +111,14 @@
   {/if}
 
   <!-- Task content -->
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="group flex w-full cursor-pointer items-start gap-3 bg-surface-light py-3 pr-4 text-left hover:bg-black/5 dark:bg-surface-dark dark:hover:bg-white/5"
     style="padding-left: {1 + depth * 1.5}rem; transform: translateX({swipeX}px); transition: {swiping ? 'none' : 'transform 0.2s ease-out'}"
+    role="button"
+    tabindex="0"
+    aria-label="Open task: {task.title}"
     onclick={() => onopen?.(task)}
+    onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onopen?.(task); } }}
   >
     <!-- Checkbox -->
     <button
@@ -153,8 +156,8 @@
         </span>
       {/if}
       {#if subtaskCount > 0}
-        <span class="mt-1 inline-flex items-center gap-1 text-xs opacity-40">
-          <svg class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+        <span class="mt-1 inline-flex items-center gap-1 text-xs opacity-40" aria-label="{subtasks.filter(s => s.status === 'completed').length} of {subtaskCount} subtasks completed">
+          <svg class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
             <path fill-rule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm2 4a1 1 0 011-1h10a1 1 0 110 2H6a1 1 0 01-1-1zm2 4a1 1 0 011-1h8a1 1 0 110 2H8a1 1 0 01-1-1z" />
           </svg>
           {subtasks.filter(s => s.status === "completed").length}/{subtaskCount}
@@ -163,7 +166,7 @@
     </div>
 
     <!-- Chevron -->
-    <svg class="mt-1 h-4 w-4 shrink-0 opacity-0 transition-opacity group-hover:opacity-30" viewBox="0 0 20 20" fill="currentColor">
+    <svg class="mt-1 h-4 w-4 shrink-0 opacity-0 transition-opacity group-hover:opacity-30" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
       <path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" />
     </svg>
   </div>

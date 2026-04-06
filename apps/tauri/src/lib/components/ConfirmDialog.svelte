@@ -3,9 +3,11 @@
     { message: string; detail?: string; confirmText?: string; danger?: boolean; onconfirm: () => void; oncancel: () => void } = $props();
 </script>
 
-<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="absolute inset-0 z-50 flex items-center justify-center"
+  role="dialog"
+  aria-modal="true"
+  aria-label={message}
   onclick={oncancel}
   onkeydown={(e) => { if (e.key === "Escape") { e.stopPropagation(); oncancel(); } }}
 >

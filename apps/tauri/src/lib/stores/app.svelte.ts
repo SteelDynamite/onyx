@@ -367,9 +367,18 @@ function startAutoSync() {
   stopAutoSync();
   triggerSync();
   _syncInterval = setInterval(triggerSync, syncIntervalSecs * 1000);
+  // Store the promise-returned unlisten function, ensuring we clean up any
+  // previous listener before assigning a new one.
   getCurrentWindow().onFocusChanged(({ payload: focused }) => {
     if (focused && Date.now() - lastSyncTime > SYNC_FOCUS_THRESHOLD_MS) triggerSync();
-  }).then((unlisten) => { _focusUnlisten = unlisten; }).catch((e) => {
+  }).then((unlisten) => {
+    // If stopAutoSync was called while the promise was pending, immediately clean up
+    if (!_syncInterval) {
+      unlisten();
+    } else {
+      _focusUnlisten = unlisten;
+    }
+  }).catch((e) => {
     console.warn("Failed to set up focus listener:", e);
   });
 }

@@ -32,21 +32,22 @@ impl WebDavClient {
         if !base_url.starts_with("https://") {
             return Err(Error::WebDav("Refusing non-HTTPS URL: credentials would be sent in plaintext".into()));
         }
-        Ok(Self::new_unchecked(base_url, username, password))
+        Self::new_unchecked(base_url, username, password)
     }
 
-    fn new_unchecked(base_url: &str, username: &str, password: &str) -> Self {
+    fn new_unchecked(base_url: &str, username: &str, password: &str) -> Result<Self> {
         let base_url = base_url.trim_end_matches('/').to_string();
-        Self {
-            _client: Client::builder()
-                .timeout(REQUEST_TIMEOUT)
-                .connect_timeout(CONNECT_TIMEOUT)
-                .build()
-                .unwrap_or_else(|_| Client::new()),
+        let client = Client::builder()
+            .timeout(REQUEST_TIMEOUT)
+            .connect_timeout(CONNECT_TIMEOUT)
+            .build()
+            .map_err(|e| Error::WebDav(format!("Failed to build HTTP client: {}", e)))?;
+        Ok(Self {
+            _client: client,
             _base_url: base_url,
             _username: Zeroizing::new(username.to_string()),
             _password: Zeroizing::new(password.to_string()),
-        }
+        })
     }
 
     fn full_url(&self, path: &str) -> String {
@@ -750,7 +751,7 @@ mod tests {
 
     #[test]
     fn test_full_url_building() {
-        let client = WebDavClient::new_unchecked("http://example.com/dav/", "user", "pass");
+        let client = WebDavClient::new_unchecked("http://example.com/dav/", "user", "pass").unwrap();
         assert_eq!(client.full_url(""), "http://example.com/dav");
         assert_eq!(client.full_url("file.md"), "http://example.com/dav/file.md");
         assert_eq!(client.full_url("My Tasks/Buy groceries.md"), "http://example.com/dav/My%20Tasks/Buy%20groceries.md");
@@ -758,7 +759,7 @@ mod tests {
 
     #[test]
     fn test_full_url_strips_leading_slash() {
-        let client = WebDavClient::new_unchecked("http://example.com/dav", "user", "pass");
+        let client = WebDavClient::new_unchecked("http://example.com/dav", "user", "pass").unwrap();
         assert_eq!(client.full_url("/file.md"), "http://example.com/dav/file.md");
     }
 

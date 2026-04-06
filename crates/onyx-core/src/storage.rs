@@ -13,6 +13,8 @@ const MAX_TITLE_LENGTH: usize = 500;
 const MAX_DESCRIPTION_LENGTH: usize = 1_000_000; // 1 MB
 /// Maximum allowed length for list names.
 const MAX_LIST_NAME_LENGTH: usize = 255;
+/// Maximum allowed size for YAML frontmatter (64 KB) to prevent DoS via crafted files.
+const MAX_FRONTMATTER_LENGTH: usize = 64 * 1024;
 /// Workspace root metadata filename.
 const WORKSPACE_METADATA_FILE: &str = ".onyx-workspace.json";
 /// Per-list metadata filename.
@@ -23,11 +25,15 @@ const TASK_FILE_EXT: &str = "md";
 const DEFAULT_TASK_VERSION: u64 = 1;
 
 /// Write data to a temporary file then atomically rename to the target path.
-/// Prevents corruption from partial writes on crash.
+/// Prevents corruption from partial writes on crash. Cleans up temp file on
+/// rename failure to prevent accumulation.
 fn atomic_write(path: &Path, content: &[u8]) -> std::io::Result<()> {
     let temp = path.with_extension("tmp");
     fs::write(&temp, content)?;
-    fs::rename(&temp, path)?;
+    if let Err(e) = fs::rename(&temp, path) {
+        let _ = fs::remove_file(&temp);
+        return Err(e);
+    }
     Ok(())
 }
 
@@ -279,6 +285,12 @@ impl FileSystemStorage {
 
         let frontmatter_lines = &lines[1..=end_idx];
         let frontmatter_str = frontmatter_lines.join("\n");
+        if frontmatter_str.len() > MAX_FRONTMATTER_LENGTH {
+            return Err(Error::InvalidData(format!(
+                "Frontmatter too large ({} bytes, max {})",
+                frontmatter_str.len(), MAX_FRONTMATTER_LENGTH
+            )));
+        }
         let frontmatter: TaskFrontmatter = serde_yaml::from_str(&frontmatter_str)?;
 
         let description = if end_idx + 2 < lines.len() {
@@ -292,7 +304,7 @@ impl FileSystemStorage {
 
     fn write_markdown_with_frontmatter(&self, task: &Task) -> Result<String> {
         let mut frontmatter = TaskFrontmatter::from(task);
-        frontmatter.version = task.version + 1;
+        frontmatter.version = task.version.saturating_add(1);
         let yaml = serde_yaml::to_string(&frontmatter)?;
 
         let mut content = String::new();
@@ -407,13 +419,14 @@ impl Storage for FileSystemStorage {
         let list_dir = self.list_dir_path(list_id)?;
         let task_path = self.task_file_path(&list_dir, &task);
 
-        fs::remove_file(&task_path)?;
-
-        // Remove from task_order
+        // Update metadata first so a crash between steps leaves an orphaned file
+        // (recoverable) rather than an orphaned metadata entry (confusing).
         let mut list_metadata = self.read_list_metadata(list_id)?;
         list_metadata.task_order.retain(|&id| id != task_id);
         list_metadata.updated_at = Utc::now();
         self.write_list_metadata(&list_metadata)?;
+
+        fs::remove_file(&task_path)?;
 
         Ok(())
     }
@@ -453,7 +466,9 @@ impl Storage for FileSystemStorage {
             }
         }
 
-        // Self-healing dedup: group by UUID, keep highest version, delete stale files
+        // Self-healing dedup: group by UUID, keep highest version, delete stale files.
+        // When versions are equal, keep the file with the latest filesystem modification
+        // time to avoid non-deterministic selection.
         let mut by_id: HashMap<Uuid, Vec<(PathBuf, Task)>> = HashMap::new();
         for entry in file_tasks {
             by_id.entry(entry.1.id).or_default().push(entry);
@@ -462,7 +477,17 @@ impl Storage for FileSystemStorage {
         let mut tasks = Vec::new();
         for (_id, mut entries) in by_id {
             if entries.len() > 1 {
-                entries.sort_by(|a, b| b.1.version.cmp(&a.1.version));
+                entries.sort_by(|a, b| {
+                    // Primary: highest version first
+                    let version_cmp = b.1.version.cmp(&a.1.version);
+                    if version_cmp != std::cmp::Ordering::Equal {
+                        return version_cmp;
+                    }
+                    // Tiebreaker: most recently modified file first
+                    let mtime_a = fs::metadata(&a.0).and_then(|m| m.modified()).ok();
+                    let mtime_b = fs::metadata(&b.0).and_then(|m| m.modified()).ok();
+                    mtime_b.cmp(&mtime_a)
+                });
                 for (stale_path, _) in entries.drain(1..) {
                     if let Err(e) = fs::remove_file(&stale_path) {
                         eprintln!("Warning: failed to remove stale duplicate task file {:?}: {}", stale_path, e);
@@ -580,15 +605,16 @@ impl Storage for FileSystemStorage {
     fn delete_list(&mut self, list_id: Uuid) -> Result<()> {
         let list_dir = self.list_dir_path(list_id)?;
 
-        fs::remove_dir_all(&list_dir)?;
-
-        // Remove from root metadata
+        // Update root metadata first so a crash between steps leaves an orphaned
+        // directory (recoverable) rather than an orphaned metadata entry.
         let mut root_metadata = self.read_root_metadata_internal()?;
         root_metadata.list_order.retain(|&id| id != list_id);
         if root_metadata.last_opened_list == Some(list_id) {
             root_metadata.last_opened_list = root_metadata.list_order.first().copied();
         }
         self.write_root_metadata_internal(&root_metadata)?;
+
+        fs::remove_dir_all(&list_dir)?;
 
         Ok(())
     }
