@@ -210,12 +210,59 @@
 
   let workspaceIds = $derived(app.config ? Object.keys(app.config.workspaces).sort((a, b) => (app.config!.workspaces[a].name).localeCompare(app.config!.workspaces[b].name)) : []);
   let translateX = $derived(showDrawer ? '0' : '-80cqi');
+
+  let _edgeSwipeStartX = 0;
+  let _edgeSwipeStartY = 0;
+  let _edgeSwipeActive = false;
+
+  function handleEdgeTouchStart(e: TouchEvent) {
+    const t = e.touches[0];
+    if (t.clientX > 20) return;
+    _edgeSwipeStartX = t.clientX;
+    _edgeSwipeStartY = t.clientY;
+    _edgeSwipeActive = true;
+  }
+
+  function handleEdgeTouchMove(e: TouchEvent) {
+    if (!_edgeSwipeActive) return;
+    const dx = e.touches[0].clientX - _edgeSwipeStartX;
+    const dy = e.touches[0].clientY - _edgeSwipeStartY;
+    // Cancel if gesture is more vertical than horizontal
+    if (Math.abs(dy) > Math.abs(dx)) { _edgeSwipeActive = false; return; }
+    // Prevent scroll interference while swiping right from edge
+    e.preventDefault();
+  }
+
+  function handleEdgeTouchEnd(e: TouchEvent) {
+    if (!_edgeSwipeActive) return;
+    _edgeSwipeActive = false;
+    const dx = e.changedTouches[0].clientX - _edgeSwipeStartX;
+    if (dx < 60) return;
+    if (taskStack.length > 0) closeDetail();
+    else if (!showDrawer) showDrawer = true;
+  }
+
+  let _viewportEl = $state<HTMLDivElement | null>(null);
+
+  // Register touchmove as non-passive so preventDefault() works
+  $effect(() => {
+    if (!_viewportEl) return;
+    _viewportEl.addEventListener('touchmove', handleEdgeTouchMove, { passive: false });
+    return () => _viewportEl!.removeEventListener('touchmove', handleEdgeTouchMove);
+  });
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
 
 <!-- Viewport clip -->
-<div class="h-full w-full overflow-hidden">
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+<div
+  class="h-full w-full overflow-hidden"
+  role="region"
+  bind:this={_viewportEl}
+  ontouchstart={handleEdgeTouchStart}
+  ontouchend={handleEdgeTouchEnd}
+>
 <!-- Sliding container: left drawer + main content -->
 <div
   class="flex h-full ease-out {resizing ? '' : 'transition-transform duration-250'}"
@@ -283,6 +330,18 @@
           </div>
         {/if}
       </div>
+
+      {#if app.config?.current_workspace}
+        <button
+          onclick={() => { settingsWorkspace = app.config!.current_workspace; showSettings = true; }}
+          class="shrink-0 rounded-lg p-1.5 hover:bg-black/5 dark:hover:bg-white/10"
+          aria-label="Workspace settings"
+        >
+          <svg class="h-4 w-4 opacity-50" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd" />
+          </svg>
+        </button>
+      {/if}
 
     </div>
 
