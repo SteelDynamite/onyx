@@ -6,6 +6,7 @@
   import TasksScreen from "./lib/screens/TasksScreen.svelte";
 
   const isLinux = platform() === "linux";
+  const isMobile = platform() === "android" || platform() === "ios";
 
   onMount(() => {
     app.loadConfig();
@@ -18,7 +19,7 @@
       class="relative h-full w-full overflow-hidden bg-surface-light text-text-light dark:bg-surface-dark dark:text-text-dark"
       class:rounded-xl={isLinux}
       class:linux-window-border={isLinux}
-      style="container-type: inline-size"
+      style="container-type: inline-size{isMobile ? '; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom)' : ''}"
     >
       {#if app.error}
         <div
