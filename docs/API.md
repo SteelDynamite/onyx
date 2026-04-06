@@ -305,11 +305,12 @@ let result = sync_workspace(
     "username",
     "password",
     SyncMode::Full,
+    None, // optional progress callback
 ).await?;
 
 // Push-only or pull-only
-sync_workspace(path, url, user, pass, SyncMode::PushOnly).await?;
-sync_workspace(path, url, user, pass, SyncMode::PullOnly).await?;
+sync_workspace(path, url, user, pass, SyncMode::Push, None).await?;
+sync_workspace(path, url, user, pass, SyncMode::Pull, None).await?;
 ```
 
 #### Check Sync Status
@@ -375,7 +376,9 @@ client.delete_file("old-task.md").await?;
 - **Offline queue**: Pending operations are queued and replayed when connectivity returns
 - **Sync state**: Stored in `.syncstate.json` within the workspace directory
 - **Auto-sync**: Periodic polling (configurable `sync_interval_secs`), debounced file-change trigger (5s), window-focus trigger (30s stale threshold)
-- **Response size cap**: PROPFIND responses are limited to 10 MB (checked via `Content-Length` header and actual body size) to prevent memory exhaustion from malicious servers
+- **Response size cap**: PROPFIND responses and file downloads are limited to 10 MB (checked via `Content-Length` header and actual body size) to prevent memory exhaustion from malicious servers
+- **Path traversal protection**: Sync paths are validated to reject `..` and `\` components before any file system operation
+- **Atomic writes**: Sync state (`.syncstate.json`) and offline queue (`.syncqueue.json`) use atomic write pattern (temp file + rename) to prevent corruption on crash
 - **Syncable files**: Only processes files at expected depths — `.onyx-workspace.json` at root (depth 1), `.listdata.json` and `*.md` inside list directories (depth 2)
 
 ## Error Handling
@@ -396,6 +399,37 @@ pub enum Error {
     Credential(String),
 }
 ```
+
+## Input Validation & Safety
+
+### Size Limits
+
+The storage layer enforces the following limits:
+
+| Input | Max Length | Error |
+|-------|-----------|-------|
+| Task title | 500 characters | `InvalidData` |
+| Task description | 1,000,000 bytes (1 MB) | `InvalidData` |
+| List name | 255 characters | `InvalidData` |
+| WebDAV file download | 10 MB | `WebDav` |
+| PROPFIND response | 10 MB | `WebDav` |
+
+### Atomic Writes
+
+All metadata and state files use an atomic write pattern (write to `.tmp` then rename) to prevent data corruption if the process crashes mid-write:
+
+- `.onyx-workspace.json` (root metadata)
+- `.listdata.json` (list metadata)
+- `config.json` (app config)
+- `.syncstate.json` (sync state)
+- `.syncqueue.json` (offline queue)
+
+### Path Safety
+
+- **List names**: Rejected if they contain `/`, `\`, or `..` components. Canonicalized and verified to stay within workspace root.
+- **Sync paths**: Validated to reject `..` and `\` before any file system operation.
+- **Workspace paths** (Tauri): Rejected if they point to system directories (`/etc`, `/usr`, `/bin`, etc.).
+- **Filenames**: Sanitized to replace `/ \ : * ? " < > |` and control characters with `_`.
 
 ## Example: Complete Workflow
 

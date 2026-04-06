@@ -35,11 +35,11 @@ Two-crate workspace (`resolver = "2"`, edition 2021) plus a Tauri app:
 
 ### Key patterns
 
-- **Storage trait** (`storage.rs`): Strategy pattern for task persistence. `FileSystemStorage` reads/writes markdown files with YAML frontmatter and JSON metadata files.
+- **Storage trait** (`storage.rs`): Strategy pattern for task persistence. `FileSystemStorage` reads/writes markdown files with YAML frontmatter and JSON metadata files. Atomic writes (temp file + rename) for all metadata files. Input validation: task titles max 500 chars, descriptions max 1MB, list names max 255 chars.
 - **Repository** (`repository.rs`): `TaskRepository` wraps a `Storage` impl and provides the public API for task/list CRUD, ordering, and grouping. Tests live here.
-- **Config** (`config.rs`): `AppConfig` manages workspaces keyed by UUID string. `WorkspaceConfig` stores `name`, `path`, `mode` (Local/Webdav), `webdav_url`, `webdav_path` (user-selected remote folder), `theme`, and `sync_interval_secs`. `add_workspace` returns a generated UUID. Stored in platform-specific config dirs via the `directories` crate.
-- **Sync** (`sync.rs`): Three-way diff sync with offline queue. Checksum-based conflict resolution: downloads remote, compares SHA-256 — identical content is a false conflict (skipped); when different, remote wins and local is recovered as a duplicate with a new UUID and `[RECOVERED FROM CONFLICT]` prefix. Auto-sync lifecycle: periodic polling (configurable interval, default 60s), debounced file-change (5s), window-focus (30s stale threshold). Wrapped in `tokio::time::timeout` (60s) to handle unreachable servers on Windows.
-- **WebDAV** (`webdav.rs`): reqwest client with rustls-tls, 30s request timeout, 10s connect timeout. Rejects non-HTTPS URLs. `Zeroizing<String>` for credential fields. `move_resource` method for WebDAV MOVE (workspace rename). 10MB PROPFIND response cap. Desktop credentials via `keyring` crate (feature-gated); Tauri GUI uses `tauri-plugin-credentials` for cross-platform support (Android Keystore + desktop keychain).
+- **Config** (`config.rs`): `AppConfig` manages workspaces keyed by UUID string. `WorkspaceConfig` stores `name`, `path`, `mode` (Local/Webdav), `webdav_url`, `webdav_path` (user-selected remote folder), `theme`, and `sync_interval_secs`. `add_workspace` returns a generated UUID. Stored in platform-specific config dirs via the `directories` crate. Atomic writes (temp file + rename) prevent corruption on crash.
+- **Sync** (`sync.rs`): Three-way diff sync with offline queue. Checksum-based conflict resolution: downloads remote, compares SHA-256 — identical content is a false conflict (skipped); when different, remote wins and local is recovered as a duplicate with a new UUID and `[RECOVERED FROM CONFLICT]` prefix. Auto-sync lifecycle: periodic polling (configurable interval, default 60s), debounced file-change (5s), window-focus (30s stale threshold). Wrapped in `tokio::time::timeout` (60s) to handle unreachable servers on Windows. Path traversal validation on all sync paths. Atomic writes for sync state and queue files.
+- **WebDAV** (`webdav.rs`): reqwest client with rustls-tls, 30s request timeout, 10s connect timeout. Rejects non-HTTPS URLs. `Zeroizing<String>` for credential fields. `move_resource` method for WebDAV MOVE (workspace rename). 10MB cap on both PROPFIND responses and file downloads. Desktop credentials via `keyring` crate (feature-gated); Tauri GUI uses `tauri-plugin-credentials` for cross-platform support (Android Keystore + desktop keychain).
 
 ### On-disk format
 
@@ -63,7 +63,7 @@ The GUI uses Svelte 5 runes mode (`$state`, `$derived`, `$effect`, `$props()`). 
 
 Pre-alpha. No users, no released builds, no data to migrate. Breaking changes to on-disk formats, config structure, or sync conventions are free — do not add migration logic.
 
-### Current state (2026-04-05)
+### Current state (2026-04-06)
 
 - **Phase 1** (Core + CLI): Complete
 - **Phase 2** (WebDAV sync): Complete — remote folder browsing, checksum-based conflict resolution, auto-sync lifecycle, per-workspace sync interval
@@ -104,6 +104,8 @@ Pre-alpha. No users, no released builds, no data to migrate. Breaking changes to
 - Task deduplication on load (handles sync conflict duplicates)
 - Subtask hierarchy: subtask count shown on parent tasks in list, subtask detail via three-panel slide navigation, inline add at top of subtask list (new subtasks prepend), collapsible completed subtasks section, cascade delete (parent deletion removes all subtasks with confirmation warning)
 - Custom confirmation dialogs (ConfirmDialog component replaces native confirm())
+- Workspace path validation (rejects system directories)
+- Task detail auto-cleanup (taskStack clears when viewed task is deleted or list switches)
 
 ### GUI features NOT yet done
 
