@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type {
   AppConfig,
   Task,
@@ -11,6 +12,8 @@ import type {
 // Listen for file system changes from the backend watcher.
 listen("fs-changed", () => {
   loadLists();
+  // Debounced sync for WebDAV workspaces on local file changes
+  if (isWebdav) debouncedSync();
 });
 
 // ── Reactive state ───────────────────────────────────────────────────
@@ -22,9 +25,18 @@ let activeListId = $state<string | null>(null);
 let tasks = $state<Task[]>([]);
 let osDark = globalThis.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
 let syncing = $state(false);
-let syncMode = $state<"full" | "push" | "pull">("full");
+let initialSync = $state(false);
+let syncStatus = $state<"idle" | "synced" | "error" | "offline">("idle");
 let lastSyncResult = $state<SyncResult | null>(null);
 let error = $state<string | null>(null);
+let missingWorkspace = $state<string | null>(null);
+let lastSyncTime = 0;
+let _syncInterval: ReturnType<typeof setInterval> | null = null;
+let _syncDebounce: ReturnType<typeof setTimeout> | null = null;
+let _focusUnlisten: (() => void) | null = null;
+const DEFAULT_SYNC_INTERVAL_SECS = 60;
+const SYNC_DEBOUNCE_MS = 5_000;
+const SYNC_FOCUS_THRESHOLD_MS = 30_000;
 
 // ── Derived ──────────────────────────────────────────────────────────
 
@@ -63,6 +75,16 @@ let currentTheme = $derived(
 let isDark = $derived(
   currentTheme ? DARK_THEMES.has(currentTheme) : osDark,
 );
+let isWebdav = $derived(
+  config?.current_workspace
+    ? config.workspaces[config.current_workspace]?.mode === "webdav"
+    : false,
+);
+let syncIntervalSecs = $derived(
+  config?.current_workspace
+    ? config.workspaces[config.current_workspace]?.sync_interval_secs ?? DEFAULT_SYNC_INTERVAL_SECS
+    : DEFAULT_SYNC_INTERVAL_SECS,
+);
 
 // ── Actions ──────────────────────────────────────────────────────────
 
@@ -70,8 +92,19 @@ async function loadConfig() {
   try {
     config = await invoke<AppConfig>("get_config");
     if (hasWorkspace) {
+      // Try loading lists — if the workspace path is gone, get_lists will fail
+      lists = [];
+      try {
+        lists = await invoke<TaskList[]>("get_lists");
+      } catch {
+        missingWorkspace = config!.current_workspace;
+        screen = "missing";
+        return;
+      }
+      if (lists.length > 0 && !activeListId) activeListId = lists[0].id;
+      if (activeListId) await loadTasks();
       screen = "tasks";
-      await loadLists();
+      if (isWebdav) startAutoSync();
     } else {
       screen = "setup";
     }
@@ -95,23 +128,35 @@ async function addWorkspace(name: string, path: string) {
   }
 }
 
-async function switchWorkspace(name: string) {
+async function switchWorkspace(id: string) {
   try {
-    await invoke("set_current_workspace", { name });
+    await invoke("set_current_workspace", { id });
     config = await invoke<AppConfig>("get_config");
     activeListId = null;
     await loadLists();
-    const ws = config?.workspaces[name];
+    const ws = config?.workspaces[id];
     if (ws) invoke("watch_workspace", { path: ws.path }).catch((e) => console.warn("File watcher failed:", e));
+    if (isWebdav) startAutoSync(); else stopAutoSync();
     error = null;
   } catch (e) {
     error = String(e);
   }
 }
 
-async function removeWorkspace(name: string) {
+async function renameWorkspace(id: string, newName: string) {
   try {
-    await invoke("remove_workspace", { name });
+    await invoke("rename_workspace", { id, newName });
+    config = await invoke<AppConfig>("get_config");
+    error = null;
+  } catch (e) {
+    error = String(e);
+  }
+}
+
+async function removeWorkspace(id: string) {
+  stopAutoSync();
+  try {
+    await invoke("remove_workspace", { id });
     config = await invoke<AppConfig>("get_config");
     if (!hasWorkspace) {
       screen = "setup";
@@ -139,7 +184,14 @@ async function loadLists() {
 async function loadTasks() {
   if (!activeListId) return;
   try {
-    tasks = await invoke<Task[]>("list_tasks", { listId: activeListId });
+    const loaded = await invoke<Task[]>("list_tasks", { listId: activeListId });
+    // Deduplicate by task ID — sync conflicts can produce files with the same UUID
+    const seen = new Set<string>();
+    tasks = loaded.filter((t) => {
+      if (seen.has(t.id)) return false;
+      seen.add(t.id);
+      return true;
+    });
   } catch (e) {
     error = String(e);
   }
@@ -147,6 +199,7 @@ async function loadTasks() {
 
 async function selectList(id: string) {
   activeListId = id;
+  tasks = [];
   await loadTasks();
 }
 
@@ -281,36 +334,69 @@ async function setGroupByDueDate(listId: string, enabled: boolean) {
 }
 
 async function triggerSync() {
-  if (!config?.current_workspace) return;
+  if (!config?.current_workspace || syncing) return;
   syncing = true;
-  error = null;
   try {
     const result = await invoke<SyncResult>("sync_workspace", {
-      workspaceName: config.current_workspace,
-      mode: syncMode,
+      workspaceId: config.current_workspace,
+      mode: "full",
     });
     lastSyncResult = result;
-    if (result.errors.length > 0) {
-      error = result.errors.join("; ");
-    }
+    lastSyncTime = Date.now();
+    syncStatus = result.errors.length > 0 ? "error" : "synced";
+    if (result.errors.length > 0) error = result.errors.join("; ");
     config = await invoke<AppConfig>("get_config");
     await loadLists();
   } catch (e) {
-    error = String(e);
+    const msg = String(e);
+    const isTransient = /timeout|connect|network|unreachable|refused/i.test(msg);
+    syncStatus = isTransient ? "offline" : "error";
+    // Only show the error banner for non-transient failures; connectivity issues just update the status dot
+    if (!isTransient) error = msg;
   } finally {
     syncing = false;
   }
 }
 
-function setSyncMode(mode: "full" | "push" | "pull") {
-  syncMode = mode;
+function debouncedSync() {
+  if (_syncDebounce) clearTimeout(_syncDebounce);
+  _syncDebounce = setTimeout(() => { _syncDebounce = null; triggerSync(); }, SYNC_DEBOUNCE_MS);
+}
+
+function startAutoSync() {
+  stopAutoSync();
+  triggerSync();
+  _syncInterval = setInterval(triggerSync, syncIntervalSecs * 1000);
+  getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+    if (focused && Date.now() - lastSyncTime > SYNC_FOCUS_THRESHOLD_MS) triggerSync();
+  }).then((unlisten) => { _focusUnlisten = unlisten; });
+}
+
+function stopAutoSync() {
+  if (_syncInterval) { clearInterval(_syncInterval); _syncInterval = null; }
+  if (_syncDebounce) { clearTimeout(_syncDebounce); _syncDebounce = null; }
+  if (_focusUnlisten) { _focusUnlisten(); _focusUnlisten = null; }
+}
+
+async function setSyncInterval(secs: number | null) {
+  if (!config?.current_workspace) return;
+  try {
+    await invoke("set_sync_interval", {
+      workspaceId: config.current_workspace,
+      intervalSecs: secs,
+    });
+    config = await invoke<AppConfig>("get_config");
+    if (isWebdav) startAutoSync();
+  } catch (e) {
+    error = String(e);
+  }
 }
 
 async function setTheme(theme: string | null) {
   if (!config?.current_workspace) return;
   try {
     await invoke("set_workspace_theme", {
-      workspaceName: config.current_workspace,
+      workspaceId: config.current_workspace,
       theme,
     });
     config = await invoke<AppConfig>("get_config");
@@ -319,18 +405,49 @@ async function setTheme(theme: string | null) {
   }
 }
 
-async function addWebdavWorkspace(name: string, webdavUrl: string, username: string, password: string) {
+async function addWebdavWorkspace(name: string, webdavUrl: string, webdavPath: string, username: string, password: string) {
   try {
-    await invoke("add_webdav_workspace", { name, webdavUrl, username, password });
+    await invoke("add_webdav_workspace", { name, webdavUrl, webdavPath, username, password });
     config = await invoke<AppConfig>("get_config");
-    await loadLists();
-    const ws = config?.workspaces[name];
-    if (ws) invoke("watch_workspace", { path: ws.path }).catch((e) => console.warn("File watcher failed:", e));
     screen = "tasks";
     error = null;
+    // Run initial sync before showing content so the workspace isn't empty
+    initialSync = true;
+    try {
+      await triggerSync();
+    } finally {
+      initialSync = false;
+    }
+    await loadLists();
+    if (config?.current_workspace) {
+      const ws = config.workspaces[config.current_workspace];
+      if (ws) invoke("watch_workspace", { path: ws.path }).catch((e) => console.warn("File watcher failed:", e));
+    }
+    if (isWebdav) startAutoSync();
   } catch (e) {
+    initialSync = false;
     error = String(e);
   }
+}
+
+async function forgetMissingWorkspace() {
+  if (!missingWorkspace) return;
+  await removeWorkspace(missingWorkspace);
+  missingWorkspace = null;
+  config = await invoke<AppConfig>("get_config");
+  if (hasWorkspace) {
+    // Switch to the next available workspace
+    const nextName = Object.keys(config!.workspaces)[0];
+    if (nextName) {
+      await switchWorkspace(nextName);
+      screen = "tasks";
+      return;
+    }
+  }
+  screen = "setup";
+  lists = [];
+  tasks = [];
+  activeListId = null;
 }
 
 function setScreen(s: Screen) {
@@ -377,8 +494,17 @@ export const app = {
   get syncing() {
     return syncing;
   },
-  get syncMode() {
-    return syncMode;
+  get initialSync() {
+    return initialSync;
+  },
+  get syncStatus() {
+    return syncStatus;
+  },
+  get isWebdav() {
+    return isWebdav;
+  },
+  get syncIntervalSecs() {
+    return syncIntervalSecs;
   },
   get lastSyncResult() {
     return lastSyncResult;
@@ -389,10 +515,14 @@ export const app = {
   get hasWorkspace() {
     return hasWorkspace;
   },
+  get missingWorkspace() {
+    return missingWorkspace;
+  },
   getSubtasks,
   loadConfig,
   addWorkspace,
   switchWorkspace,
+  renameWorkspace,
   removeWorkspace,
   loadLists,
   loadTasks,
@@ -408,9 +538,12 @@ export const app = {
   renameList,
   setGroupByDueDate,
   triggerSync,
-  setSyncMode,
+  startAutoSync,
+  stopAutoSync,
+  setSyncInterval,
   setTheme,
   addWebdavWorkspace,
+  forgetMissingWorkspace,
   setScreen,
   clearError,
 };

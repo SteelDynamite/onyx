@@ -17,6 +17,7 @@ use onyx_core::{
     sync::{self, SyncMode, SyncResult as CoreSyncResult},
     webdav,
 };
+use tauri_plugin_credentials::Credentials;
 
 #[cfg(not(target_os = "android"))]
 /// Active file watcher stored globally so it lives for the app lifetime.
@@ -120,12 +121,11 @@ fn add_workspace(
     state: State<'_, Mutex<AppState>>,
 ) -> Result<(), String> {
     let mut s = lock_state(&state)?;
-    let ws = WorkspaceConfig::new(PathBuf::from(&path));
-    s.config.add_workspace(name.clone(), ws);
+    let ws = WorkspaceConfig::new(name, PathBuf::from(&path));
+    let id = s.config.add_workspace(ws);
     s.config
-        .set_current_workspace(name)
+        .set_current_workspace(id)
         .map_err(|e| e.to_string())?;
-    // Reset repo so it reopens on next access
     s.repo = None;
     s.config
         .save_to_file(&s.config_path.clone())
@@ -134,12 +134,12 @@ fn add_workspace(
 
 #[tauri::command]
 fn set_current_workspace(
-    name: String,
+    id: String,
     state: State<'_, Mutex<AppState>>,
 ) -> Result<(), String> {
     let mut s = lock_state(&state)?;
     s.config
-        .set_current_workspace(name)
+        .set_current_workspace(id)
         .map_err(|e| e.to_string())?;
     s.repo = None;
     s.config
@@ -149,15 +149,94 @@ fn set_current_workspace(
 
 #[tauri::command]
 fn remove_workspace(
-    name: String,
+    id: String,
     state: State<'_, Mutex<AppState>>,
 ) -> Result<(), String> {
     let mut s = lock_state(&state)?;
-    s.config.remove_workspace(&name);
+    s.config.remove_workspace(&id);
     s.repo = None;
     s.config
         .save_to_file(&s.config_path.clone())
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn rename_workspace(
+    id: String,
+    new_name: String,
+    app_handle: tauri::AppHandle,
+    state: State<'_, Mutex<AppState>>,
+) -> Result<(), String> {
+    // Extract workspace info while holding the lock briefly
+    let (mode, old_path, webdav_url, webdav_path) = {
+        let s = lock_state(&state)?;
+        let ws = s.config.workspaces.get(&id).ok_or("Workspace not found")?;
+        (
+            ws.mode.clone(),
+            ws.path.clone(),
+            ws.webdav_url.clone(),
+            ws.webdav_path.clone(),
+        )
+    };
+
+    match mode {
+        WorkspaceMode::Local => {
+            // Rename the local folder
+            let parent = old_path.parent().ok_or("Workspace has no parent directory")?;
+            let new_path = parent.join(&new_name);
+            if new_path != old_path {
+                if new_path.exists() {
+                    return Err(format!("A folder named '{}' already exists at that location", new_name));
+                }
+                std::fs::rename(&old_path, &new_path).map_err(|e| format!("Failed to rename folder: {}", e))?;
+            }
+            let mut s = lock_state(&state)?;
+            s.config.rename_workspace(&id, new_name).map_err(|e| e.to_string())?;
+            if let Some(ws) = s.config.workspaces.get_mut(&id) {
+                ws.path = new_path;
+            }
+            s.repo = None;
+            s.config.save_to_file(&s.config_path.clone()).map_err(|e| e.to_string())?;
+        }
+        WorkspaceMode::Webdav => {
+            // Rename the remote folder via WebDAV MOVE
+            let base_url = webdav_url.as_deref().ok_or("No WebDAV URL configured")?;
+            let remote_path = webdav_path.as_deref().unwrap_or("");
+
+            let domain = base_url
+                .split("://").nth(1)
+                .and_then(|rest| rest.split('/').next())
+                .unwrap_or("").to_string();
+            let creds = app_handle.state::<Credentials<tauri::Wry>>();
+            let (username, password) = creds.load(&domain)?;
+
+            let client = webdav::WebDavClient::new(base_url, &username, &password)
+                .map_err(|e| e.to_string())?;
+
+            // Compute new remote path by replacing the last segment
+            let new_remote_path = if remote_path.is_empty() || remote_path == "/" {
+                new_name.clone()
+            } else if let Some(parent) = remote_path.trim_end_matches('/').rsplit_once('/') {
+                format!("{}/{}", parent.0, new_name)
+            } else {
+                new_name.clone()
+            };
+
+            if new_remote_path != remote_path {
+                client.move_resource(remote_path, &new_remote_path).await.map_err(|e| e.to_string())?;
+            }
+
+            let mut s = lock_state(&state)?;
+            s.config.rename_workspace(&id, new_name).map_err(|e| e.to_string())?;
+            if let Some(ws) = s.config.workspaces.get_mut(&id) {
+                ws.webdav_path = Some(new_remote_path);
+            }
+            s.repo = None;
+            s.config.save_to_file(&s.config_path.clone()).map_err(|e| e.to_string())?;
+        }
+    }
+
+    Ok(())
 }
 
 // ── Workspace init ───────────────────────────────────────────────────
@@ -405,12 +484,12 @@ fn get_group_by_due_date(
 
 #[tauri::command]
 fn set_webdav_config(
-    workspace_name: String,
+    workspace_id: String,
     webdav_url: String,
     state: State<'_, Mutex<AppState>>,
 ) -> Result<(), String> {
     let mut s = lock_state(&state)?;
-    if let Some(ws) = s.config.workspaces.get_mut(&workspace_name) {
+    if let Some(ws) = s.config.workspaces.get_mut(&workspace_id) {
         ws.webdav_url = Some(webdav_url);
     }
     s.config
@@ -420,36 +499,162 @@ fn set_webdav_config(
 
 #[tauri::command]
 fn set_workspace_theme(
-    workspace_name: String,
+    workspace_id: String,
     theme: Option<String>,
     state: State<'_, Mutex<AppState>>,
 ) -> Result<(), String> {
     let mut s = lock_state(&state)?;
-    if let Some(ws) = s.config.workspaces.get_mut(&workspace_name) {
+    if let Some(ws) = s.config.workspaces.get_mut(&workspace_id) {
         ws.theme = theme;
     }
     s.config.save_to_file(&s.config_path.clone()).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn add_webdav_workspace(
-    name: String,
-    webdav_url: String,
-    username: String,
-    password: String,
+fn set_sync_interval(
+    workspace_id: String,
+    interval_secs: Option<u64>,
     state: State<'_, Mutex<AppState>>,
 ) -> Result<(), String> {
     let mut s = lock_state(&state)?;
-    let managed_dir = s.app_data_dir.join("workspaces").join(&name);
+    if let Some(ws) = s.config.workspaces.get_mut(&workspace_id) {
+        ws.sync_interval_secs = interval_secs;
+    }
+    s.config.save_to_file(&s.config_path.clone()).map_err(|e| e.to_string())
+}
+
+/// A remote folder entry returned to the frontend.
+#[derive(Debug, Serialize, Deserialize)]
+struct RemoteFolderEntry {
+    name: String,
+    is_workspace: bool,
+}
+
+/// Summary of a list inside a remote workspace.
+#[derive(Debug, Serialize, Deserialize)]
+struct RemoteListInfo {
+    name: String,
+    task_count: usize,
+}
+
+#[tauri::command]
+async fn list_remote_folder(
+    url: String,
+    username: String,
+    password: String,
+    path: String,
+) -> Result<Vec<RemoteFolderEntry>, String> {
+    let client = onyx_core::webdav::WebDavClient::new(&url, &username, &password)
+        .map_err(|e| e.to_string())?;
+    let entries = client.list_files(&path).await.map_err(|e| e.to_string())?;
+
+    let dir_entries: Vec<_> = entries.into_iter().filter(|e| e.is_dir).collect();
+
+    // Check all subfolders for .onyx-workspace.json in parallel
+    let sub_paths: Vec<_> = dir_entries.iter().map(|entry| {
+        if path.is_empty() { entry.path.clone() }
+        else { format!("{}/{}", path.trim_end_matches('/'), entry.path) }
+    }).collect();
+    let checks: Vec<_> = sub_paths.iter().map(|sp| {
+        client.list_files(sp)
+    }).collect();
+    let results: Vec<_> = futures::future::join_all(checks).await
+        .into_iter().map(|r| r.unwrap_or_default()).collect();
+
+    let folders = dir_entries.into_iter().zip(results).map(|(entry, sub_files)| {
+        let is_workspace = sub_files.iter().any(|f| !f.is_dir && f.path == ".onyx-workspace.json");
+        RemoteFolderEntry { name: entry.path, is_workspace }
+    }).collect();
+
+    Ok(folders)
+}
+
+#[tauri::command]
+async fn inspect_remote_workspace(
+    url: String,
+    username: String,
+    password: String,
+    path: String,
+) -> Result<Vec<RemoteListInfo>, String> {
+    let client = onyx_core::webdav::WebDavClient::new(&url, &username, &password)
+        .map_err(|e| e.to_string())?;
+    let entries = client.list_files(&path).await.map_err(|e| e.to_string())?;
+
+    let mut lists = Vec::new();
+    for entry in entries {
+        if !entry.is_dir { continue; }
+        let list_path = if path.is_empty() {
+            entry.path.clone()
+        } else {
+            format!("{}/{}", path.trim_end_matches('/'), entry.path)
+        };
+        let files = client.list_files(&list_path).await.unwrap_or_default();
+        let has_listdata = files.iter().any(|f| !f.is_dir && f.path == ".listdata.json");
+        if has_listdata {
+            let task_count = files.iter().filter(|f| !f.is_dir && f.path.ends_with(".md")).count();
+            lists.push(RemoteListInfo {
+                name: entry.path,
+                task_count,
+            });
+        }
+    }
+
+    Ok(lists)
+}
+
+#[tauri::command]
+async fn create_remote_workspace(
+    url: String,
+    username: String,
+    password: String,
+    path: String,
+) -> Result<(), String> {
+    let client = onyx_core::webdav::WebDavClient::new(&url, &username, &password)
+        .map_err(|e| e.to_string())?;
+    if !path.is_empty() {
+        client.ensure_dir(&path).await.map_err(|e| e.to_string())?;
+    }
+    // Upload an empty .onyx-workspace.json
+    let metadata = serde_json::json!({
+        "version": 1,
+        "list_order": [],
+        "last_opened_list": null,
+    });
+    let file_path = if path.is_empty() {
+        ".onyx-workspace.json".to_string()
+    } else {
+        format!("{}/{}", path.trim_end_matches('/'), ".onyx-workspace.json")
+    };
+    client.put_file(&file_path, serde_json::to_string_pretty(&metadata).unwrap().into_bytes())
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn add_webdav_workspace(
+    name: String,
+    webdav_url: String,
+    webdav_path: String,
+    username: String,
+    password: String,
+    app_handle: tauri::AppHandle,
+    state: State<'_, Mutex<AppState>>,
+) -> Result<(), String> {
+    let mut s = lock_state(&state)?;
+    // Use a UUID-based directory name to avoid filesystem conflicts with duplicate workspace names
+    let dir_id = uuid::Uuid::new_v4().to_string();
+    let managed_dir = s.app_data_dir.join("workspaces").join(&dir_id);
     std::fs::create_dir_all(&managed_dir).map_err(|e| e.to_string())?;
     TaskRepository::init(managed_dir.clone()).map(|_| ()).map_err(|e| e.to_string())?;
 
-    let mut ws = WorkspaceConfig::new(managed_dir);
+    let mut ws = WorkspaceConfig::new(name, managed_dir);
     ws.mode = WorkspaceMode::Webdav;
     ws.webdav_url = Some(webdav_url.clone());
+    ws.webdav_path = Some(webdav_path);
 
-    s.config.add_workspace(name.clone(), ws);
-    s.config.set_current_workspace(name).map_err(|e| e.to_string())?;
+    let id = s.config.add_workspace(ws);
+    s.config.set_current_workspace(id).map_err(|e| e.to_string())?;
     s.repo = None;
 
     // Store credentials keyed by hostname
@@ -461,7 +666,8 @@ fn add_webdav_workspace(
         .to_string();
     s.config.save_to_file(&s.config_path.clone()).map_err(|e| e.to_string())?;
     drop(s);
-    webdav::store_credentials(&domain, &username, &password).map_err(|e| e.to_string())?;
+    let creds = app_handle.state::<Credentials<tauri::Wry>>();
+    creds.store(&domain, &username, &password)?;
     Ok(())
 }
 
@@ -470,23 +676,19 @@ async fn store_credentials(
     domain: String,
     username: String,
     password: String,
+    app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
-    tokio::task::spawn_blocking(move || {
-        webdav::store_credentials(&domain, &username, &password).map_err(|e| e.to_string())
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    let creds = app_handle.state::<Credentials<tauri::Wry>>();
+    creds.store(&domain, &username, &password)
 }
 
 #[tauri::command]
-async fn load_credentials(domain: String) -> Result<(String, String), String> {
-    tokio::task::spawn_blocking(move || {
-        webdav::load_credentials(&domain)
-            .map(|(u, p)| ((*u).clone(), (*p).clone()))
-            .map_err(|e| e.to_string())
-    })
-    .await
-    .map_err(|e| e.to_string())?
+async fn load_credentials(
+    domain: String,
+    app_handle: tauri::AppHandle,
+) -> Result<(String, String), String> {
+    let creds = app_handle.state::<Credentials<tauri::Wry>>();
+    creds.load(&domain)
 }
 
 #[tauri::command]
@@ -505,16 +707,22 @@ async fn test_webdav_connection(
 
 #[tauri::command]
 async fn sync_workspace(
-    workspace_name: String,
+    workspace_id: String,
     mode: String,
+    app_handle: tauri::AppHandle,
     state: State<'_, Mutex<AppState>>,
 ) -> Result<SyncResult, String> {
-    // Step 1: read config
+    // Step 1: read config — combine base URL with the user-chosen remote path
     let (workspace_path, webdav_url) = {
         let s = lock_state(&state)?;
-        let ws = s.config.workspaces.get(&workspace_name)
+        let ws = s.config.workspaces.get(&workspace_id)
             .ok_or("Workspace not found")?;
-        (ws.path.clone(), ws.webdav_url.clone().ok_or("No WebDAV URL configured")?)
+        let base = ws.webdav_url.clone().ok_or("No WebDAV URL configured")?;
+        let full = match &ws.webdav_path {
+            Some(p) if !p.is_empty() => format!("{}/{}", base.trim_end_matches('/'), p.trim_matches('/')),
+            _ => base,
+        };
+        (ws.path.clone(), full)
     };
 
     // Step 2: load credentials
@@ -524,13 +732,8 @@ async fn sync_workspace(
         .and_then(|rest| rest.split('/').next())
         .unwrap_or("")
         .to_string();
-    let (username, password) = tokio::task::spawn_blocking(move || {
-        webdav::load_credentials(&domain)
-            .map(|(u, p)| ((*u).clone(), (*p).clone()))
-            .map_err(|e| e.to_string())
-    })
-    .await
-    .map_err(|e| e.to_string())??;
+    let creds = app_handle.state::<Credentials<tauri::Wry>>();
+    let (username, password) = creds.load(&domain)?;
 
     let sync_mode = match mode.as_str() {
         "push" => SyncMode::Push,
@@ -550,7 +753,7 @@ async fn sync_workspace(
 
     {
         let mut s = lock_state(&state)?;
-        if let Some(ws) = s.config.workspaces.get_mut(&workspace_name) {
+        if let Some(ws) = s.config.workspaces.get_mut(&workspace_id) {
             ws.last_sync = Some(Utc::now());
         }
         s.config.save_to_file(&s.config_path.clone()).map_err(|e| e.to_string())?;
@@ -621,6 +824,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_os::init())
+        .plugin(tauri_plugin_credentials::init())
         .setup(|app| {
             // Resolve app data dir and config path
             let app_data_dir = app.path().app_data_dir()
@@ -648,6 +852,7 @@ pub fn run() {
             add_workspace,
             set_current_workspace,
             remove_workspace,
+            rename_workspace,
             init_workspace,
             get_lists,
             create_list,
@@ -664,7 +869,11 @@ pub fn run() {
             get_group_by_due_date,
             set_webdav_config,
             set_workspace_theme,
+            set_sync_interval,
             add_webdav_workspace,
+            list_remote_folder,
+            inspect_remote_workspace,
+            create_remote_workspace,
             store_credentials,
             load_credentials,
             test_webdav_connection,

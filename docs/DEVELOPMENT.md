@@ -76,6 +76,11 @@ onyx/
 │       │       ├── components/         # Reusable UI components
 │       │       ├── stores/             # Svelte state (app.svelte.ts)
 │       │       └── types.ts           # TypeScript type definitions
+│       ├── tauri-plugin-credentials/   # Cross-platform credential storage plugin
+│       │   ├── Cargo.toml
+│       │   ├── src/
+│       │   │   └── lib.rs              # Desktop (keyring) + plugin API
+│       │   └── android/                # Android (EncryptedSharedPreferences)
 │       └── src-tauri/                  # Rust backend (Tauri commands)
 │           ├── Cargo.toml
 │           ├── tauri.conf.json

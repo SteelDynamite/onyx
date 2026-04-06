@@ -187,6 +187,28 @@ impl WebDavClient {
         Ok(())
     }
 
+    /// Move/rename a resource (file or directory) on the server using WebDAV MOVE.
+    pub async fn move_resource(&self, from: &str, to: &str) -> Result<()> {
+        let from_url = self.full_url(from);
+        let to_url = self.full_url(to);
+        let resp = self._client
+            .request(reqwest::Method::from_bytes(b"MOVE").unwrap(), &from_url)
+            .basic_auth(self._username.as_str(), Some(self._password.as_str()))
+            .header("Destination", &to_url)
+            .header("Overwrite", "F")
+            .send()
+            .await?;
+
+        let status = resp.status().as_u16();
+        if status == 412 {
+            return Err(Error::WebDav("Destination already exists".into()));
+        }
+        if !(200..=299).contains(&status) {
+            return Err(Error::WebDav(format!("MOVE failed with status {}", status)));
+        }
+        Ok(())
+    }
+
     /// Ensure a directory exists, creating it and parents as needed.
     pub async fn ensure_dir(&self, path: &str) -> Result<()> {
         let parts: Vec<&str> = path.trim_matches('/').split('/').filter(|s| !s.is_empty()).collect();

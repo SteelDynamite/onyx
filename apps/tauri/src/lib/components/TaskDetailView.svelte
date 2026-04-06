@@ -35,7 +35,7 @@
   function debouncedSave(fields: Partial<Task>) {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
-      app.updateTask({ ...task, ...fields, updated_at: new Date().toISOString() });
+      app.updateTask({ ...task, ...fields });
     }, 400);
   }
 
@@ -48,7 +48,7 @@
   }
 
   function handleDateChange(iso: string | null, hasTime: boolean = false) {
-    app.updateTask({ ...task, due_date: iso, has_time: hasTime, updated_at: new Date().toISOString() });
+    app.updateTask({ ...task, due_date: iso, has_time: hasTime });
   }
 
   async function handleToggle() {

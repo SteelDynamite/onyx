@@ -45,14 +45,11 @@
       showWorkspacePicker = false;
     if (showListMenu && listMenuEl && !listMenuEl.contains(e.target as Node))
       showListMenu = false;
-    const target = e.target as HTMLElement;
-    if (wsMenuName && !target.closest("[data-ws-menu]")) wsMenuName = null;
   }
 
   let newListName = $state("");
   let showCompleted = $state(false);
   let completedVisible = $state(false);
-  let wsMenuName = $state<string | null>(null);
   let renamingListId = $state<string | null>(null);
   let renameValue = $state("");
   let showListMenu = $state(false);
@@ -137,7 +134,6 @@
     if (taskStack.length > 0) { closeDetail(); return; }
     if (showListMenu) { showListMenu = false; return; }
     if (showDrawer) { closeDrawer(); return; }
-    if (wsMenuName) { wsMenuName = null; return; }
     if (showWorkspacePicker) { showWorkspacePicker = false; return; }
   }
 
@@ -204,7 +200,7 @@
     if (isDesktop) appWindow.startDragging();
   }
 
-  let workspaceNames = $derived(app.config ? Object.keys(app.config.workspaces).sort((a, b) => a.localeCompare(b)) : []);
+  let workspaceIds = $derived(app.config ? Object.keys(app.config.workspaces).sort((a, b) => (app.config!.workspaces[a].name).localeCompare(app.config!.workspaces[b].name)) : []);
   let translateX = $derived(showDrawer ? '0' : '-80cqi');
 </script>
 
@@ -219,6 +215,7 @@
 >
   <!-- Drawer panel -->
   <div class="flex h-full shrink-0 flex-col bg-surface-light dark:bg-surface-dark" style="width: 80cqi">
+    <div class="shrink-0" style="height: var(--safe-top)"></div>
     <!-- Drawer header: workspace switcher + settings -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
@@ -230,7 +227,7 @@
           onclick={() => (showWorkspacePicker = !showWorkspacePicker)}
           class="flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm font-semibold hover:bg-black/5 dark:hover:bg-white/10"
         >
-          <span class="truncate">{app.config?.current_workspace ?? "Workspace"}</span>
+          <span class="truncate">{app.config?.current_workspace ? app.config.workspaces[app.config.current_workspace]?.name ?? "Workspace" : "Workspace"}</span>
           <svg class="h-3.5 w-3.5 shrink-0 transition-transform {showWorkspacePicker ? 'rotate-180' : ''}" viewBox="0 0 20 20" fill="currentColor">
             <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" />
           </svg>
@@ -240,55 +237,31 @@
           <div
             class="absolute left-0 top-full z-40 mt-1 w-full rounded-lg border border-border-light bg-surface-light py-1 shadow-lg dark:border-border-dark dark:bg-surface-dark"
           >
-            {#each workspaceNames as name}
-              {@const ws = app.config?.workspaces[name]}
+            {#each workspaceIds as wsId}
+              {@const ws = app.config?.workspaces[wsId]}
               <div class="group flex items-center px-1 hover:bg-black/5 dark:hover:bg-white/10">
                 <button
-                  onclick={() => { if (name !== app.config?.current_workspace) app.switchWorkspace(name); showWorkspacePicker = false; }}
-                  class="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left {name === app.config?.current_workspace ? 'font-bold' : ''}"
+                  onclick={() => { if (wsId !== app.config?.current_workspace) app.switchWorkspace(wsId); showWorkspacePicker = false; }}
+                  class="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left {wsId === app.config?.current_workspace ? 'font-bold' : ''}"
                 >
-                  {#if name === app.config?.current_workspace}
+                  {#if wsId === app.config?.current_workspace}
                     <svg class="h-4 w-4 shrink-0 opacity-50" viewBox="0 0 20 20" fill="currentColor">
                       <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" />
                     </svg>
                   {/if}
                   <div class="min-w-0 flex-1">
-                    <p class="truncate text-sm">{name}</p>
-                    <p class="truncate text-xs opacity-40">{ws?.mode === "webdav" ? ws.webdav_url ?? "WebDAV" : ws?.path ?? ""}</p>
+                    <p class="truncate text-sm">{ws?.name}</p>
+                    <p class="truncate text-xs opacity-40">{ws?.mode === "webdav" ? ws.webdav_url ?? "WebDAV" : ws?.path?.replace(/\/[^/]+\/?$/, "") ?? ""}</p>
                   </div>
                 </button>
-                <div class="relative shrink-0" data-ws-menu>
-                  <button
-                    onclick={(e) => { e.stopPropagation(); wsMenuName = wsMenuName === name ? null : name; }}
-                    class="rounded p-1 opacity-0 transition-opacity group-hover:opacity-40 hover:!opacity-80 {wsMenuName === name ? '!opacity-80' : ''}"
-                  >
-                    <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
-                      <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
-                    </svg>
-                  </button>
-                  {#if wsMenuName === name}
-                    <div class="absolute right-0 top-full z-40 mt-1 min-w-[140px] rounded-lg border border-border-light bg-surface-light py-1 shadow-lg dark:border-border-dark dark:bg-surface-dark">
-                      <button
-                        onclick={() => { wsMenuName = null; settingsWorkspace = name; showSettings = true; showWorkspacePicker = false; }}
-                        class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"
-                      >
-                        <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                          <path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd" />
-                        </svg>
-                        Settings
-                      </button>
-                      <button
-                        onclick={() => { wsMenuName = null; confirmRemoveWorkspace = name; }}
-                        class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-danger hover:bg-black/5 dark:hover:bg-white/10"
-                      >
-                        <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                          <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
-                        </svg>
-                        Delete
-                      </button>
-                    </div>
-                  {/if}
-                </div>
+                <button
+                  onclick={(e) => { e.stopPropagation(); settingsWorkspace = wsId; showSettings = true; showWorkspacePicker = false; }}
+                  class="shrink-0 rounded p-1 opacity-0 transition-opacity group-hover:opacity-40 hover:!opacity-80"
+                >
+                  <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd" />
+                  </svg>
+                </button>
               </div>
             {/each}
             <div class="mt-1 border-t border-border-light px-1 pt-1 dark:border-border-dark">
@@ -354,6 +327,34 @@
       </div>
     </div>
 
+    <!-- Drawer footer: sync status -->
+    <div class="shrink-0 px-4 py-2.5" style="padding-bottom: max(0.625rem, var(--safe-bottom))">
+      {#if app.isWebdav}
+        <div class="flex items-center gap-2">
+          <!-- Status dot -->
+          <span
+            class="inline-block h-2 w-2 rounded-full {app.syncing ? 'animate-pulse bg-primary' : app.syncStatus === 'synced' || app.syncStatus === 'idle' ? 'bg-green-500' : app.syncStatus === 'error' ? 'bg-red-500' : 'bg-gray-400'}"
+          ></span>
+          <span class="flex-1 text-xs opacity-60">
+            {app.syncing ? "Syncing..." : app.syncStatus === "synced" || app.syncStatus === "idle" ? "Synced" : app.syncStatus === "error" ? "Sync error" : "Offline"}{#if !app.syncing && app.lastSyncResult && (app.lastSyncResult.uploaded > 0 || app.lastSyncResult.downloaded > 0)}&nbsp;&nbsp;{#if app.lastSyncResult.uploaded > 0}↑{app.lastSyncResult.uploaded}{/if}{#if app.lastSyncResult.uploaded > 0 && app.lastSyncResult.downloaded > 0} {/if}{#if app.lastSyncResult.downloaded > 0}↓{app.lastSyncResult.downloaded}{/if}{/if}
+          </span>
+          <!-- Manual sync button -->
+          <button
+            onclick={() => app.triggerSync()}
+            disabled={app.syncing}
+            class="rounded-lg p-1.5 hover:bg-black/5 disabled:opacity-30 dark:hover:bg-white/10"
+            title="Sync now"
+          >
+            <svg class="h-4 w-4" style={app.syncing ? 'animation: spin 1s linear infinite reverse' : ''} viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd" />
+            </svg>
+          </button>
+        </div>
+      {:else}
+        <span class="text-xs opacity-40">Local workspace</span>
+      {/if}
+    </div>
+
   </div>
 
   <!-- Main content panel -->
@@ -374,6 +375,7 @@
     >
       <!-- Sub-panel: Task list -->
       <div class="relative flex h-full w-1/3 flex-col">
+        <div class="shrink-0" style="height: var(--safe-top)"></div>
         <!-- Header / drag region -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <header
@@ -495,6 +497,7 @@
 
         <!-- Task list -->
         <main class="flex-1 overflow-y-auto">
+          {#key app.activeListId}
           {#if app.lists.length === 0}
             <div class="flex h-full flex-col items-center justify-center p-8 text-center">
               <p class="text-lg font-medium opacity-60">No lists yet</p>
@@ -558,11 +561,13 @@
               {/if}
             {/if}
           {/if}
+          {/key}
         </main>
 
         <!-- FAB button -->
         <div
-          class="pointer-events-none absolute bottom-6 left-0 right-0 z-20 flex justify-center transition-all duration-250 ease-out {newTaskState.open ? 'opacity-0 scale-75' : ''} {showDrawer || taskStack.length > 0 ? 'translate-y-24 opacity-0' : 'translate-y-0 opacity-100'}"
+          class="pointer-events-none absolute left-0 right-0 z-20 flex justify-center transition-all duration-250 ease-out {newTaskState.open ? 'opacity-0 scale-75' : ''} {showDrawer || taskStack.length > 0 ? 'translate-y-24 opacity-0' : 'translate-y-0 opacity-100'}"
+          style="bottom: max(1.5rem, var(--safe-bottom))"
         >
           <button
             onclick={() => { if (app.activeListId) newTaskState.open = true; }}
@@ -578,6 +583,7 @@
 
       <!-- Sub-panel: Task detail -->
       <div class="relative flex h-full w-1/3 flex-col bg-surface-light dark:bg-surface-dark">
+        <div class="shrink-0" style="height: var(--safe-top)"></div>
         {#if parentTask}
           {#key parentTask.id}
             <TaskDetailView task={parentTask} onback={closeDetail} onopen={pushTask} />
@@ -587,6 +593,7 @@
 
       <!-- Sub-panel: Subtask detail -->
       <div class="relative flex h-full w-1/3 flex-col bg-surface-light dark:bg-surface-dark">
+        <div class="shrink-0" style="height: var(--safe-top)"></div>
         {#if subtaskDetail}
           {#key subtaskDetail.id}
             <TaskDetailView task={subtaskDetail} onback={closeDetail} />
@@ -595,15 +602,6 @@
       </div>
     </div>
 
-    <!-- Sync status indicator -->
-    {#if app.syncing}
-      <div class="absolute bottom-4 right-4 z-20 h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
-    {:else if app.lastSyncResult}
-      <div class="absolute bottom-4 right-4 z-20 flex items-center gap-1 rounded-full bg-black/10 px-2.5 py-1 text-xs opacity-60 dark:bg-white/10">
-        <span>↑{app.lastSyncResult.uploaded}</span>
-        <span>↓{app.lastSyncResult.downloaded}</span>
-      </div>
-    {/if}
   </div>
 </div>
 </div>
@@ -612,7 +610,7 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="absolute inset-0 z-50 flex transition-opacity duration-200 {showSettings ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}"
-  style="padding: 4%"
+  style="padding: 4%; padding-top: max(4%, env(safe-area-inset-top)); padding-bottom: max(4%, env(safe-area-inset-bottom))"
 >
   <!-- Backdrop -->
   <div
@@ -625,7 +623,7 @@
     class="relative flex h-full w-full flex-col overflow-hidden rounded-2xl bg-surface-light transition-transform duration-200 dark:bg-surface-dark {showSettings ? 'scale-100' : 'scale-95'}"
     style="border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 25px 60px rgba(0,0,0,0.7), 0 10px 20px rgba(0,0,0,0.5)"
   >
-    <SettingsScreen onclose={closeSettings} workspaceName={settingsWorkspace ?? app.config?.current_workspace ?? ""} />
+    <SettingsScreen onclose={closeSettings} workspaceId={settingsWorkspace ?? app.config?.current_workspace ?? ""} ondelete={(id) => { closeSettings(); confirmRemoveWorkspace = id; }} />
   </div>
 </div>
 
@@ -648,11 +646,11 @@
 <!-- Remove workspace confirmation -->
 {#if confirmRemoveWorkspace}
   <ConfirmDialog
-    message='Remove workspace "{confirmRemoveWorkspace}"?'
+    message='Remove workspace "{app.config?.workspaces[confirmRemoveWorkspace]?.name ?? confirmRemoveWorkspace}"?'
     detail="Files remain on disk."
     confirmText="Remove"
     danger
-    onconfirm={() => { const name = confirmRemoveWorkspace; confirmRemoveWorkspace = null; if (name) app.removeWorkspace(name); }}
+    onconfirm={() => { const id = confirmRemoveWorkspace; confirmRemoveWorkspace = null; if (id) app.removeWorkspace(id); }}
     oncancel={() => (confirmRemoveWorkspace = null)}
   />
 {/if}

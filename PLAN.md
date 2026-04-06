@@ -61,9 +61,8 @@ Tasks are stored as individual `.md` files with YAML frontmatter:
 ---
 id: 550e8400-e29b-41d4-a716-446655440000
 status: backlog
+version: 3
 due: 2026-11-15T14:00:00Z
-created: 2026-10-26T10:00:00Z
-updated: 2026-10-26T12:30:00Z
 parent: 550e8400-e29b-41d4-a716-446655440001
 ---
 
@@ -86,8 +85,8 @@ Task {
     description: String,              // Markdown content
     status: TaskStatus,         // Backlog or Completed
     due_date: Option<DateTime>,
-    created_at: DateTime,
-    updated_at: DateTime,
+    has_time: bool,             // Whether due_date includes a specific time
+    version: u64,               // Increments on every write; used for sync dedup
     parent_id: Option<Uuid>,    // For subtasks
 }
 
@@ -106,12 +105,18 @@ TaskList {
 }
 
 AppConfig {
-    workspaces: HashMap<String, WorkspaceConfig>,
-    current_workspace: Option<String>,
+    workspaces: HashMap<String, WorkspaceConfig>,  // UUID keys
+    current_workspace: Option<String>,              // UUID
 }
 
 WorkspaceConfig {
+    name: String,                      // Display name
     path: PathBuf,
+    mode: WorkspaceMode,               // Local or Webdav
+    webdav_url: Option<String>,
+    webdav_path: Option<String>,       // User-selected remote folder
+    theme: Option<String>,
+    sync_interval_secs: Option<u64>,
 }
 ```
 
@@ -119,7 +124,7 @@ WorkspaceConfig {
 
 ```
 ~/Documents/Tasks/           # User-selected folder
-├── .metadata.json           # Global: list ordering, last opened list
+├── .onyx-workspace.json           # Global: list ordering, last opened list
 ├── My Tasks/                # Task list folder
 │   ├── .listdata.json       # List metadata: task order, id, timestamps
 │   ├── Buy groceries.md     # Title: "Buy groceries" (without .md)
@@ -132,7 +137,7 @@ WorkspaceConfig {
 
 **Note**: Task titles are derived from filenames by removing the `.md` extension.
 
-**`.metadata.json` (root level)**:
+**`.onyx-workspace.json` (root level)**:
 ```json
 {
   "version": 1,
@@ -169,14 +174,20 @@ WorkspaceConfig {
 ```json
 {
   "workspaces": {
-    "personal": {
-      "path": "/home/user/Documents/Tasks"
+    "a1b2c3d4-...": {
+      "name": "personal",
+      "path": "/home/user/Documents/Tasks",
+      "mode": "local"
     },
-    "shared": {
-      "path": "/home/user/Dropbox/TeamTasks"
+    "e5f6g7h8-...": {
+      "name": "shared",
+      "path": "/home/user/Dropbox/TeamTasks",
+      "mode": "webdav",
+      "webdav_url": "https://nextcloud.example.com/remote.php/dav/files/user/",
+      "webdav_path": "TeamTasks"
     }
   },
-  "current_workspace": "personal"
+  "current_workspace": "a1b2c3d4-..."
 }
 ```
 
@@ -394,7 +405,7 @@ $ onyx workspace migrate personal ~/Dropbox/Tasks
 ⚠ This will move all files from ~/Documents/Tasks to ~/Dropbox/Tasks
 Continue? (y/n): y
 Moving files...
-  Moved .metadata.json
+  Moved .onyx-workspace.json
   Moved My Tasks/ (15 files)
   Moved Work/ (8 files)
 ✓ Migrated 23 files to ~/Dropbox/Tasks
@@ -453,11 +464,16 @@ cargo run -p onyx-cli -- workspace list
 Add WebDAV support to `onyx-core`:
 
 ```rust
-// Update WorkspaceConfig to include WebDAV
+// WorkspaceConfig with WebDAV support (UUID-keyed in AppConfig)
 WorkspaceConfig {
+    name: String,
     path: PathBuf,
+    mode: WorkspaceMode,               // Local or Webdav
     webdav_url: Option<String>,
+    webdav_path: Option<String>,       // User-selected remote folder
     last_sync: Option<DateTime>,
+    theme: Option<String>,
+    sync_interval_secs: Option<u64>,
 }
 
 // AppConfig remains the same (workspaces + current_workspace)
@@ -484,8 +500,8 @@ pub fn delete_credentials(domain: &str) -> Result<()>;
 ```
 
 #### Sync Strategy
-- **Trigger**: On app start (if connected), background timer (every 5 min), on modification (debounced)
-- **Conflict Resolution**: Last-write-wins with timestamp
+- **Trigger**: Auto-sync lifecycle — periodic polling (configurable interval, default 60s), debounced file-change (5s), window-focus (30s stale threshold)
+- **Conflict Resolution**: Checksum-based — downloads remote, compares SHA-256. Identical = false conflict (skipped). Different = remote wins, local recovered as duplicate with new UUID and `[RECOVERED FROM CONFLICT]` prefix
 - **Offline Support**: Queue operations when offline, sync when online
 
 #### Authentication
@@ -664,20 +680,22 @@ apps/tauri/
 
 #### App Configuration (Phase 3+)
 
-**Update AppConfig** to include UI preferences:
+**AppConfig** with UI preferences (theme is per-workspace):
 ```rust
 AppConfig {
-    workspaces: HashMap<String, WorkspaceConfig>,  // From Phase 1
-    current_workspace: Option<String>,
-    theme: Theme,                    // NEW: light/dark mode
-    window_size: Option<(u32, u32)>, // NEW: remember window size
-    last_opened_list_per_workspace: HashMap<String, Uuid>,  // NEW: per-workspace last view
+    workspaces: HashMap<String, WorkspaceConfig>,  // UUID keys
+    current_workspace: Option<String>,              // UUID
 }
 
 WorkspaceConfig {
+    name: String,                        // Display name
     path: PathBuf,
-    webdav_url: Option<String>,      // From Phase 2
+    mode: WorkspaceMode,                 // Local or Webdav
+    webdav_url: Option<String>,
+    webdav_path: Option<String>,         // User-selected remote folder
     last_sync: Option<DateTime>,
+    theme: Option<String>,               // Per-workspace theme
+    sync_interval_secs: Option<u64>,     // Auto-sync interval
 }
 ```
 
@@ -1011,6 +1029,6 @@ This project is free and open-source software licensed under GPL v3.
 
 ---
 
-**Last Updated**: 2026-04-03
-**Document Version**: 4.2
+**Last Updated**: 2026-04-05
+**Document Version**: 4.3
 **Status**: Ready to Implement - Milestone-Driven Plan

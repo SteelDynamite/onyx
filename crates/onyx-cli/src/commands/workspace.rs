@@ -27,18 +27,13 @@ pub fn add(name: String, path: String) -> Result<()> {
     // Load config
     let mut config = load_config()?;
 
-    // Check if workspace already exists
-    if config.get_workspace(&name).is_some() {
-        anyhow::bail!("Workspace '{}' already exists", name);
-    }
-
     // Add workspace
-    config.add_workspace(name.clone(), WorkspaceConfig::new(path_buf.clone()));
+    let id = config.add_workspace(WorkspaceConfig::new(name.clone(), path_buf.clone()));
 
     // Save config
     save_config(&config)?;
 
-    output::success(&format!("Added workspace \"{}\" at {}", name, path_buf.display()));
+    output::success(&format!("Added workspace \"{}\" ({}) at {}", name, &id[..8], path_buf.display()));
     output::success("Created default list \"My Tasks\"");
 
     Ok(())
@@ -55,29 +50,37 @@ pub fn list() -> Result<()> {
     let current = config.current_workspace.as_deref();
 
     let mut workspaces: Vec<_> = config.workspaces.iter().collect();
-    workspaces.sort_by(|a, b| a.0.cmp(b.0));
+    workspaces.sort_by(|a, b| a.1.name.cmp(&b.1.name));
 
-    for (name, workspace_config) in workspaces {
-        let marker = if Some(name.as_str()) == current {
+    for (id, workspace_config) in workspaces {
+        let marker = if Some(id.as_str()) == current {
             " (current)".green()
         } else {
             "".normal()
         };
-        output::item(&format!("{}: {}{}", name, workspace_config.path.display(), marker));
+        output::item(&format!("{}: {}{}", workspace_config.name, workspace_config.path.display(), marker));
     }
 
     Ok(())
 }
 
+/// Resolve a workspace name to its ID. Errors if not found or ambiguous.
+fn resolve_name(config: &onyx_core::config::AppConfig, name: &str) -> Result<String> {
+    let matches: Vec<_> = config.workspaces.iter()
+        .filter(|(_, ws)| ws.name == name)
+        .collect();
+    match matches.len() {
+        0 => anyhow::bail!("Workspace '{}' not found", name),
+        1 => Ok(matches[0].0.clone()),
+        n => anyhow::bail!("Ambiguous: {} workspaces named '{}'. Use the workspace ID instead.", n, name),
+    }
+}
+
 pub fn switch(name: String) -> Result<()> {
     let mut config = load_config()?;
+    let id = resolve_name(&config, &name)?;
 
-    // Verify workspace exists
-    if config.get_workspace(&name).is_none() {
-        anyhow::bail!("Workspace '{}' not found", name);
-    }
-
-    config.set_current_workspace(name.clone())?;
+    config.set_current_workspace(id)?;
     save_config(&config)?;
 
     output::success(&format!("Switched to workspace \"{}\"", name));
@@ -87,11 +90,7 @@ pub fn switch(name: String) -> Result<()> {
 
 pub fn remove(name: String) -> Result<()> {
     let mut config = load_config()?;
-
-    // Verify workspace exists
-    if config.get_workspace(&name).is_none() {
-        anyhow::bail!("Workspace '{}' not found", name);
-    }
+    let id = resolve_name(&config, &name)?;
 
     // Confirm
     output::warning("This will delete workspace config (files remain on disk)");
@@ -107,7 +106,7 @@ pub fn remove(name: String) -> Result<()> {
         return Ok(());
     }
 
-    config.remove_workspace(&name);
+    config.remove_workspace(&id);
     save_config(&config)?;
 
     output::success(&format!("Removed workspace \"{}\"", name));
@@ -124,14 +123,10 @@ pub fn retarget(name: String, path: String) -> Result<()> {
     };
 
     let mut config = load_config()?;
-
-    // Verify workspace exists
-    if config.get_workspace(&name).is_none() {
-        anyhow::bail!("Workspace '{}' not found", name);
-    }
+    let id = resolve_name(&config, &name)?;
 
     // Update path
-    config.add_workspace(name.clone(), WorkspaceConfig::new(path_buf.clone()));
+    config.workspaces.get_mut(&id).unwrap().path = path_buf.clone();
     save_config(&config)?;
 
     output::success(&format!("Workspace \"{}\" now points to {}", name, path_buf.display()));
@@ -148,9 +143,10 @@ pub fn migrate(name: String, new_path: String) -> Result<()> {
     };
 
     let mut config = load_config()?;
+    let id = resolve_name(&config, &name)?;
 
     // Get current workspace config
-    let old_path = config.get_workspace(&name)
+    let old_path = config.get_workspace(&id)
         .ok_or_else(|| anyhow::anyhow!("Workspace '{}' not found", name))?
         .path.clone();
 
@@ -225,7 +221,7 @@ pub fn migrate(name: String, new_path: String) -> Result<()> {
     }
 
     // Update config
-    config.add_workspace(name.clone(), WorkspaceConfig::new(new_path_buf.clone()));
+    config.workspaces.get_mut(&id).unwrap().path = new_path_buf.clone();
     save_config(&config)?;
 
     output::success(&format!("Migrated {} items to {}", moved.len(), new_path_buf.display()));

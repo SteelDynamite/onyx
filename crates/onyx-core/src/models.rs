@@ -19,15 +19,13 @@ pub struct Task {
     pub due_date: Option<DateTime<Utc>>,
     #[serde(default)]
     pub has_time: bool,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub version: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent_id: Option<Uuid>,
 }
 
 impl Task {
     pub fn new(title: String) -> Self {
-        let now = Utc::now();
         Self {
             id: Uuid::new_v4(),
             title,
@@ -35,8 +33,7 @@ impl Task {
             status: TaskStatus::Backlog,
             due_date: None,
             has_time: false,
-            created_at: now,
-            updated_at: now,
+            version: 0,
             parent_id: None,
         }
     }
@@ -58,12 +55,10 @@ impl Task {
 
     pub fn complete(&mut self) {
         self.status = TaskStatus::Completed;
-        self.updated_at = Utc::now();
     }
 
     pub fn uncomplete(&mut self) {
         self.status = TaskStatus::Backlog;
-        self.updated_at = Utc::now();
     }
 }
 

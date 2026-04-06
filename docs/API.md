@@ -20,8 +20,7 @@ pub struct Task {
     pub status: TaskStatus,
     pub due_date: Option<DateTime<Utc>>,
     pub has_time: bool,            // Whether due_date includes a specific time
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub version: u64,              // Increments on every write; used for sync dedup
     pub parent_id: Option<Uuid>,
 }
 
@@ -64,12 +63,12 @@ pub struct TaskList {
 
 #### AppConfig
 
-Global application configuration supporting multiple workspaces.
+Global application configuration supporting multiple workspaces. Workspaces are keyed by UUID string.
 
 ```rust
 pub struct AppConfig {
-    pub workspaces: HashMap<String, WorkspaceConfig>,
-    pub current_workspace: Option<String>,
+    pub workspaces: HashMap<String, WorkspaceConfig>,  // UUID keys
+    pub current_workspace: Option<String>,              // UUID of active workspace
 }
 ```
 
@@ -87,14 +86,18 @@ use onyx_core::AppConfig;
 let config_path = AppConfig::get_config_path();
 let mut config = AppConfig::load_from_file(&config_path)?;
 
-// Add workspace
-config.add_workspace(
-    "personal".to_string(),
-    WorkspaceConfig::new(PathBuf::from("/home/user/tasks"))
+// Add workspace (returns generated UUID)
+let id = config.add_workspace(
+    WorkspaceConfig::new("personal".to_string(), PathBuf::from("/home/user/tasks"))
 );
 
-// Set current workspace
-config.set_current_workspace("personal".to_string())?;
+// Set current workspace by ID
+config.set_current_workspace(id)?;
+
+// Find workspace by display name
+if let Some((id, ws)) = config.find_by_name("personal") {
+    println!("Found: {} at {:?}", id, ws.path);
+}
 
 // Save config
 config.save_to_file(&config_path)?;
@@ -106,9 +109,14 @@ Configuration for a single workspace.
 
 ```rust
 pub struct WorkspaceConfig {
+    pub name: String,                          // Display name
     pub path: PathBuf,
+    pub mode: WorkspaceMode,                   // Local or Webdav
     pub webdav_url: Option<String>,
+    pub webdav_path: Option<String>,           // User-selected remote folder path
     pub last_sync: Option<DateTime<Utc>>,
+    pub theme: Option<String>,
+    pub sync_interval_secs: Option<u64>,       // Auto-sync polling interval
 }
 ```
 
@@ -232,9 +240,8 @@ Tasks are stored as `.md` files with YAML frontmatter:
 ---
 id: 550e8400-e29b-41d4-a716-446655440000
 status: backlog
+version: 3
 due: 2026-11-15T14:00:00Z
-created: 2026-10-26T10:00:00Z
-updated: 2026-10-26T12:30:00Z
 parent: 550e8400-e29b-41d4-a716-446655440001
 ---
 
@@ -267,7 +274,7 @@ Each list folder contains a `.listdata.json` file:
 
 ### Root Metadata
 
-The root folder contains a `.metadata.json` file:
+The root folder contains a `.onyx-workspace.json` file:
 
 ```json
 {
@@ -318,7 +325,7 @@ let status = get_sync_status(Path::new("/home/user/tasks"))?;
 
 Credentials are stored in the platform keychain (Windows Credential Manager, macOS Keychain, Linux Secret Service).
 
-Keyring service keys use the format `com.onyx.webdav.<domain>::<username>` — the `::` separator prevents key collisions when usernames contain dots. On first load, credentials stored in the legacy `.`-separated format (`com.onyx.webdav.<domain>.<username>`) are automatically migrated to the scoped format and the old entries are removed.
+**Core library** (`onyx-core::webdav`): Keyring service keys use the format `com.onyx.webdav.<domain>::<username>` — the `::` separator prevents key collisions when usernames contain dots. On first load, credentials stored in the legacy `.`-separated format are automatically migrated.
 
 ```rust
 use onyx_core::webdav::{store_credentials, load_credentials, delete_credentials};
@@ -333,6 +340,8 @@ let (username, password) = load_credentials("nextcloud.example.com")?;
 delete_credentials("nextcloud.example.com")?;
 ```
 
+**Tauri GUI**: Uses `tauri-plugin-credentials` instead of direct keyring calls. This plugin provides cross-platform support: EncryptedSharedPreferences (Android Keystore) on Android, keyring crate on desktop. Plugin crate at `apps/tauri/tauri-plugin-credentials/`.
+
 ### WebDAV Client
 
 ```rust
@@ -342,7 +351,7 @@ let client = WebDavClient::new(
     "https://nextcloud.example.com/remote.php/dav/files/user/Tasks",
     "username",
     "password",
-);
+)?;  // Returns Result — rejects non-HTTPS URLs
 
 // Test connection
 client.test_connection().await?;
@@ -361,11 +370,13 @@ client.delete_file("old-task.md").await?;
 
 ### Sync Strategy
 
-- **Three-way diff**: Compares local state, remote state, and last-known baseline to determine actions (upload, download, delete local/remote)
-- **Conflict resolution**: Last-write-wins using file timestamps
+- **Three-way diff**: Compares local state, remote state, and last-known baseline to determine actions (upload, download, delete local/remote, conflict)
+- **Conflict resolution**: Checksum-based — downloads remote file and compares SHA-256 checksums. Identical content is a false conflict (skipped). When different, remote wins and the local version is recovered as a duplicate task with a new UUID and `[RECOVERED FROM CONFLICT]` prefix, inserted adjacent to the original in `.listdata.json`
 - **Offline queue**: Pending operations are queued and replayed when connectivity returns
 - **Sync state**: Stored in `.syncstate.json` within the workspace directory
+- **Auto-sync**: Periodic polling (configurable `sync_interval_secs`), debounced file-change trigger (5s), window-focus trigger (30s stale threshold)
 - **Response size cap**: PROPFIND responses are limited to 10 MB (checked via `Content-Length` header and actual body size) to prevent memory exhaustion from malicious servers
+- **Syncable files**: Only processes files at expected depths — `.onyx-workspace.json` at root (depth 1), `.listdata.json` and `*.md` inside list directories (depth 2)
 
 ## Error Handling
 
@@ -424,8 +435,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Configure workspace
     let mut config = AppConfig::new();
-    config.add_workspace("personal".to_string(), WorkspaceConfig::new(path));
-    config.set_current_workspace("personal".to_string())?;
+    let ws_id = config.add_workspace(WorkspaceConfig::new("personal".to_string(), path));
+    config.set_current_workspace(ws_id)?;
     config.save_to_file(&AppConfig::get_config_path())?;
 
     Ok(())

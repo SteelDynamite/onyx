@@ -5,8 +5,7 @@ export interface Task {
   status: "backlog" | "completed";
   due_date: string | null;
   has_time: boolean;
-  created_at: string;
-  updated_at: string;
+  version: number;
   parent_id: string | null;
 }
 
@@ -22,11 +21,14 @@ export interface TaskList {
 export type WorkspaceMode = "local" | "webdav";
 
 export interface WorkspaceConfig {
+  name: string;
   path: string;
   mode: WorkspaceMode;
   webdav_url: string | null;
+  webdav_path: string | null;
   last_sync: string | null;
   theme: string | null;
+  sync_interval_secs: number | null;
 }
 
 export interface AppConfig {
@@ -43,4 +45,4 @@ export interface SyncResult {
   errors: string[];
 }
 
-export type Screen = "setup" | "tasks" | "settings";
+export type Screen = "setup" | "tasks" | "settings" | "missing";

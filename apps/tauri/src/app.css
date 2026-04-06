@@ -36,6 +36,12 @@ body {
   background: transparent;
 }
 
+/* Safe area CSS variable — content elements opt into this, overlays don't */
+:root {
+  --safe-top: env(safe-area-inset-top);
+  --safe-bottom: env(safe-area-inset-bottom);
+}
+
 .linux-window-border {
   border: 1px solid rgba(0, 0, 0, 0.15);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25), 0 0 2px rgba(0, 0, 0, 0.1);

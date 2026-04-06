@@ -24,8 +24,9 @@ impl TaskRepository {
     }
 
     // Task operations
-    pub fn create_task(&mut self, list_id: Uuid, task: Task) -> Result<Task> {
+    pub fn create_task(&mut self, list_id: Uuid, mut task: Task) -> Result<Task> {
         self.storage.write_task(list_id, &task)?;
+        task.version += 1;
         Ok(task)
     }
 

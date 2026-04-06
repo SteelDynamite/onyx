@@ -3,7 +3,9 @@ use std::path::Path;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Sha256, Digest};
+use uuid::Uuid;
 use crate::error::{Error, Result};
+use crate::storage::{ListMetadata, TaskFrontmatter};
 use crate::webdav::WebDavClient;
 
 // --- Sync State ---
@@ -32,8 +34,7 @@ pub enum SyncAction {
     Download { path: String },
     DeleteLocal { path: String },
     DeleteRemote { path: String },
-    ConflictLocalWins { path: String },
-    ConflictRemoteWins { path: String },
+    Conflict { path: String },
 }
 
 impl SyncAction {
@@ -43,8 +44,7 @@ impl SyncAction {
             | SyncAction::Download { path }
             | SyncAction::DeleteLocal { path }
             | SyncAction::DeleteRemote { path }
-            | SyncAction::ConflictLocalWins { path }
-            | SyncAction::ConflictRemoteWins { path } => path,
+            | SyncAction::Conflict { path } => path,
         }
     }
 }
@@ -137,12 +137,7 @@ pub fn compute_sync_actions(
                     (true, false) => actions.push(SyncAction::Upload { path: path.to_string() }),
                     (false, true) => actions.push(SyncAction::Download { path: path.to_string() }),
                     (true, true) => {
-                        // Both modified: last-write-wins based on timestamps
-                        if local_wins(l.modified_at.as_deref(), r.last_modified.as_deref()) {
-                            actions.push(SyncAction::ConflictLocalWins { path: path.to_string() });
-                        } else {
-                            actions.push(SyncAction::ConflictRemoteWins { path: path.to_string() });
-                        }
+                        actions.push(SyncAction::Conflict { path: path.to_string() });
                     }
                 }
             }
@@ -157,19 +152,21 @@ pub fn compute_sync_actions(
                 actions.push(SyncAction::Download { path: path.to_string() });
             }
 
-            // Both present, no base (both added): last-write-wins
-            (Some(l), Some(r), None) => {
-                if local_wins(l.modified_at.as_deref(), r.last_modified.as_deref()) {
-                    actions.push(SyncAction::ConflictLocalWins { path: path.to_string() });
-                } else {
-                    actions.push(SyncAction::ConflictRemoteWins { path: path.to_string() });
-                }
+            // Both present, no base (both added): conflict
+            (Some(_), Some(_), None) => {
+                actions.push(SyncAction::Conflict { path: path.to_string() });
             }
 
             // Local present, remote gone, base known: remote was deleted
-            (Some(_), None, Some(_)) => {
-                // modified locally + deleted remote -> upload (local wins)
-                actions.push(SyncAction::Upload { path: path.to_string() });
+            (Some(l), None, Some(b)) => {
+                let local_changed = l.checksum != b.checksum;
+                if local_changed {
+                    // modified locally + deleted remotely -> upload (local wins)
+                    actions.push(SyncAction::Upload { path: path.to_string() });
+                } else {
+                    // unchanged locally + deleted remotely -> delete local
+                    actions.push(SyncAction::DeleteLocal { path: path.to_string() });
+                }
             }
 
             // Remote present, local gone, base known: local was deleted
@@ -212,19 +209,6 @@ fn timestamps_equal(a: Option<&str>, b: Option<&str>) -> bool {
             }
         }
         _ => false,
-    }
-}
-
-/// Determine if local wins based on timestamps. True means local wins.
-fn local_wins(local_modified: Option<&str>, remote_modified: Option<&str>) -> bool {
-    // Try parsing both; if we can't parse, local wins by default
-    let local_ts = local_modified.and_then(parse_timestamp);
-    let remote_ts = remote_modified.and_then(parse_timestamp);
-    match (local_ts, remote_ts) {
-        (Some(l), Some(r)) => l >= r,
-        (Some(_), None) => true,
-        (None, Some(_)) => false,
-        (None, None) => true, // Default to local
     }
 }
 
@@ -336,8 +320,7 @@ fn queued_op_to_action(op: &QueuedOperation) -> Option<SyncAction> {
         "download" => Some(SyncAction::Download { path }),
         "delete_local" => Some(SyncAction::DeleteLocal { path }),
         "delete_remote" => Some(SyncAction::DeleteRemote { path }),
-        "conflict_local_wins" => Some(SyncAction::ConflictLocalWins { path }),
-        "conflict_remote_wins" => Some(SyncAction::ConflictRemoteWins { path }),
+        "conflict" => Some(SyncAction::Conflict { path }),
         _ => None,
     }
 }
@@ -348,8 +331,7 @@ fn action_to_queued_op(action: &SyncAction) -> QueuedOperation {
         SyncAction::Download { path } => ("download", path),
         SyncAction::DeleteLocal { path } => ("delete_local", path),
         SyncAction::DeleteRemote { path } => ("delete_remote", path),
-        SyncAction::ConflictLocalWins { path } => ("conflict_local_wins", path),
-        SyncAction::ConflictRemoteWins { path } => ("conflict_remote_wins", path),
+        SyncAction::Conflict { path } => ("conflict", path),
     };
     QueuedOperation {
         action_type: action_type.to_string(),
@@ -371,8 +353,8 @@ pub fn compute_checksum(data: &[u8]) -> String {
 fn is_syncable(path: &str) -> bool {
     let parts: Vec<&str> = path.split('/').collect();
     let filename = parts.last().copied().unwrap_or(path);
-    // .metadata.json only at workspace root (depth 1)
-    if filename == ".metadata.json" {
+    // .onyx-workspace.json only at workspace root (depth 1)
+    if filename == ".onyx-workspace.json" {
         return parts.len() == 1;
     }
     // .listdata.json only inside a list directory (depth 2)
@@ -529,9 +511,7 @@ async fn sync_workspace_inner(
     mode: SyncMode,
     on_progress: Option<ProgressCallback>,
 ) -> Result<SyncResult> {
-    // Sync into an "Onyx" subfolder so we don't scan the user's entire cloud storage
-    let sync_url = format!("{}/Onyx", webdav_url.trim_end_matches('/'));
-    let client = WebDavClient::new(&sync_url, username, password)?;
+    let client = WebDavClient::new(webdav_url, username, password)?;
     let mut sync_state = SyncState::load(workspace_path);
     let queue = OfflineQueue::load(workspace_path);
     let mut result = SyncResult::default();
@@ -542,8 +522,6 @@ async fn sync_workspace_inner(
         }
     };
 
-    // Ensure remote Onyx folder exists (creates it on first sync)
-    client.create_dir("").await.ok();
     client.test_connection().await?;
 
     // Scan local files
@@ -565,36 +543,34 @@ async fn sync_workspace_inner(
     // Merge with offline queue
     let all_actions = queue.merge_with_actions(fresh_actions);
 
-    // Filter by sync mode
+    // Filter by sync mode (conflicts always run in any mode since they need both sides)
     let actions: Vec<SyncAction> = all_actions.into_iter().filter(|a| match mode {
         SyncMode::Full => true,
-        SyncMode::Push => matches!(a, SyncAction::Upload { .. } | SyncAction::DeleteRemote { .. } | SyncAction::ConflictLocalWins { .. }),
-        SyncMode::Pull => matches!(a, SyncAction::Download { .. } | SyncAction::DeleteLocal { .. } | SyncAction::ConflictRemoteWins { .. }),
+        SyncMode::Push => matches!(a, SyncAction::Upload { .. } | SyncAction::DeleteRemote { .. } | SyncAction::Conflict { .. }),
+        SyncMode::Pull => matches!(a, SyncAction::Download { .. } | SyncAction::DeleteLocal { .. } | SyncAction::Conflict { .. }),
     }).collect();
 
     // Execute actions, collecting failures for the queue
     let mut failed_actions = Vec::new();
 
+    // Build remote timestamp lookup for recording accurate download times
+    let remote_meta: HashMap<&str, &RemoteFileSnapshot> = remote_files.iter().map(|f| (f.path.as_str(), f)).collect();
+
     for action in &actions {
-        match execute_action(&client, workspace_path, action, &mut sync_state, &report).await {
+        match execute_action(&client, workspace_path, action, &mut sync_state, &remote_meta, &report).await {
             Ok(()) => {
                 match action {
-                    SyncAction::Upload { .. } | SyncAction::ConflictLocalWins { .. } => result.uploaded += 1,
-                    SyncAction::Download { .. } | SyncAction::ConflictRemoteWins { .. } => result.downloaded += 1,
+                    SyncAction::Upload { .. } => result.uploaded += 1,
+                    SyncAction::Download { .. } => result.downloaded += 1,
                     SyncAction::DeleteLocal { .. } => result.deleted_local += 1,
                     SyncAction::DeleteRemote { .. } => result.deleted_remote += 1,
+                    SyncAction::Conflict { .. } => result.conflicts += 1,
                 }
             }
             Err(e) => {
                 let msg = format!("Failed {}: {}", action.path(), e);
                 report(&format!("  ! {}", msg));
                 result.errors.push(msg);
-                if matches!(action,
-                    SyncAction::Upload { .. } | SyncAction::Download { .. }
-                    | SyncAction::ConflictLocalWins { .. } | SyncAction::ConflictRemoteWins { .. }
-                ) {
-                    result.conflicts += 1;
-                }
                 failed_actions.push(action.clone());
             }
         }
@@ -619,6 +595,7 @@ async fn execute_action(
     workspace_path: &Path,
     action: &SyncAction,
     sync_state: &mut SyncState,
+    remote_meta: &HashMap<&str, &RemoteFileSnapshot>,
     report: &(dyn Fn(&str) + Send + Sync),
 ) -> Result<()> {
     match action {
@@ -641,22 +618,80 @@ async fn execute_action(
             sync_state.record_file(path, &checksum, modified.as_deref(), data.len() as u64);
         }
 
-        SyncAction::ConflictLocalWins { path } => {
+        SyncAction::Conflict { path } => {
             let local_path = workspace_path.join(path.replace('/', std::path::MAIN_SEPARATOR_STR));
-            let data = std::fs::read(&local_path)?;
-            let checksum = compute_checksum(&data);
+            let local_data = std::fs::read(&local_path)?;
+            let local_checksum = compute_checksum(&local_data);
 
-            if let Some(parent) = path_parent(path) {
-                client.ensure_dir(parent).await?;
+            let remote_data = client.get_file(path).await?;
+            let remote_checksum = compute_checksum(&remote_data);
+
+            // If checksums match, it's a false conflict — both sides made the same edit
+            if local_checksum == remote_checksum {
+                report(&format!("  = Conflict resolved: identical content for {}", path));
+                let modified = std::fs::metadata(&local_path).ok()
+                    .and_then(|m| m.modified().ok())
+                    .map(|t| { let dt: DateTime<Utc> = t.into(); dt.to_rfc3339() });
+                sync_state.record_file(path, &local_checksum, modified.as_deref(), local_data.len() as u64);
+            } else {
+                report(&format!("  ! Conflict: remote wins for {}, recovering local as duplicate", path));
+
+                // Remote wins: overwrite local with remote content
+                std::fs::write(&local_path, &remote_data)?;
+                let modified = std::fs::metadata(&local_path).ok()
+                    .and_then(|m| m.modified().ok())
+                    .map(|t| { let dt: DateTime<Utc> = t.into(); dt.to_rfc3339() });
+                sync_state.record_file(path, &remote_checksum, modified.as_deref(), remote_data.len() as u64);
+
+                // For .md task files inside a list dir, create a duplicate of the local version
+                let parts: Vec<&str> = path.split('/').collect();
+                if parts.len() == 2 && parts[1].ends_with(".md") && parts[1] != ".listdata.json" {
+                    let local_content = String::from_utf8_lossy(&local_data);
+                    if let Ok((frontmatter, description)) = parse_frontmatter_for_conflict(&local_content) {
+                        let original_id = frontmatter.id;
+                        let new_id = Uuid::new_v4();
+                        let prefixed_desc = if description.is_empty() {
+                            "[RECOVERED FROM CONFLICT]".to_string()
+                        } else {
+                            format!("[RECOVERED FROM CONFLICT]\n{}", description)
+                        };
+
+                        let new_frontmatter = TaskFrontmatter {
+                            id: new_id,
+                            ..frontmatter
+                        };
+                        let yaml = serde_yaml::to_string(&new_frontmatter)
+                            .map_err(|e| Error::Sync(e.to_string()))?;
+                        let new_content = format!("---\n{}---\n\n{}", yaml, prefixed_desc);
+
+                        // Write the duplicate file using the new UUID as filename
+                        let list_dir = workspace_path.join(parts[0]);
+                        let dup_filename = format!("{}.md", new_id);
+                        let dup_path = list_dir.join(&dup_filename);
+                        std::fs::write(&dup_path, &new_content)?;
+
+                        // Insert new task adjacent to original in .listdata.json
+                        let listdata_path = list_dir.join(".listdata.json");
+                        if listdata_path.exists() {
+                            if let Ok(content) = std::fs::read_to_string(&listdata_path) {
+                                if let Ok(mut metadata) = serde_json::from_str::<ListMetadata>(&content) {
+                                    let insert_pos = metadata.task_order.iter()
+                                        .position(|id| *id == original_id)
+                                        .map(|p| p + 1)
+                                        .unwrap_or(metadata.task_order.len());
+                                    metadata.task_order.insert(insert_pos, new_id);
+                                    if let Ok(json) = serde_json::to_string_pretty(&metadata) {
+                                        let _ = std::fs::write(&listdata_path, json);
+                                    }
+                                }
+                            }
+                        }
+
+                        // Don't record the duplicate in sync state — next sync will see it
+                        // as "local added, remote absent" and upload it automatically.
+                    }
+                }
             }
-
-            report(&format!("  ^ Conflict: uploading local version of {}", path));
-            client.put_file(path, data.clone()).await?;
-
-            let modified = std::fs::metadata(&local_path).ok()
-                .and_then(|m| m.modified().ok())
-                .map(|t| { let dt: DateTime<Utc> = t.into(); dt.to_rfc3339() });
-            sync_state.record_file(path, &checksum, modified.as_deref(), data.len() as u64);
         }
 
         SyncAction::Download { path } => {
@@ -670,33 +705,8 @@ async fn execute_action(
             }
             std::fs::write(&local_path, &data)?;
 
-            // Record in sync state
-            let modified = std::fs::metadata(&local_path).ok()
-                .and_then(|m| m.modified().ok())
-                .map(|t| { let dt: DateTime<Utc> = t.into(); dt.to_rfc3339() });
-            sync_state.record_file(path, &checksum, modified.as_deref(), data.len() as u64);
-        }
-
-        SyncAction::ConflictRemoteWins { path } => {
-            let local_path = workspace_path.join(path.replace('/', std::path::MAIN_SEPARATOR_STR));
-            // Back up local version before overwriting with remote
-            if local_path.exists() {
-                let backup_path = local_path.with_extension("conflict-backup");
-                let _ = std::fs::copy(&local_path, &backup_path);
-                report(&format!("  ! Backed up local version to {}", backup_path.display()));
-            }
-            report(&format!("  v Conflict: downloading remote version of {}", path));
-            let data = client.get_file(path).await?;
-            let checksum = compute_checksum(&data);
-
-            if let Some(parent) = local_path.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            std::fs::write(&local_path, &data)?;
-
-            let modified = std::fs::metadata(&local_path).ok()
-                .and_then(|m| m.modified().ok())
-                .map(|t| { let dt: DateTime<Utc> = t.into(); dt.to_rfc3339() });
+            // Record remote's last_modified so next diff won't see a timestamp mismatch
+            let modified = remote_meta.get(path.as_str()).and_then(|r| r.last_modified.clone());
             sync_state.record_file(path, &checksum, modified.as_deref(), data.len() as u64);
         }
 
@@ -716,6 +726,25 @@ async fn execute_action(
         }
     }
     Ok(())
+}
+
+/// Parse frontmatter and description from a markdown task file for conflict recovery.
+fn parse_frontmatter_for_conflict(content: &str) -> Result<(TaskFrontmatter, String)> {
+    let lines: Vec<&str> = content.lines().collect();
+    if lines.is_empty() || lines[0] != "---" {
+        return Err(Error::InvalidData("Missing frontmatter delimiter".to_string()));
+    }
+    let end_idx = lines[1..].iter().position(|&line| line == "---")
+        .ok_or_else(|| Error::InvalidData("Missing closing frontmatter delimiter".to_string()))?;
+    let frontmatter_str = lines[1..=end_idx].join("\n");
+    let frontmatter: TaskFrontmatter = serde_yaml::from_str(&frontmatter_str)
+        .map_err(|e| Error::Sync(format!("Failed to parse frontmatter: {}", e)))?;
+    let description = if end_idx + 2 < lines.len() {
+        lines[end_idx + 2..].join("\n").trim().to_string()
+    } else {
+        String::new()
+    };
+    Ok((frontmatter, description))
 }
 
 /// Get the parent path of a sync path (e.g., "My Tasks/file.md" -> "My Tasks").
@@ -876,16 +905,27 @@ mod tests {
 
         let actions = compute_sync_actions(&local, &remote, &state);
         assert_eq!(actions.len(), 1);
-        // Local present, remote gone, base known -> upload (local wins)
+        // Local unchanged, remote deleted -> delete local
+        assert_eq!(actions[0], SyncAction::DeleteLocal { path: "file.md".to_string() });
+    }
+
+    #[test]
+    fn test_remote_deleted_local_modified() {
+        let local = vec![make_local("file.md", "new_checksum")];
+        let remote = vec![];
+        let mut state = SyncState::default();
+        state.files.insert("file.md".to_string(), make_base("abc123"));
+
+        let actions = compute_sync_actions(&local, &remote, &state);
+        assert_eq!(actions.len(), 1);
+        // Local modified, remote deleted -> upload (local wins)
         assert_eq!(actions[0], SyncAction::Upload { path: "file.md".to_string() });
     }
 
     #[test]
-    fn test_both_modified_local_newer() {
-        let mut local = make_local("file.md", "new_local");
-        local.modified_at = Some("2026-03-15T12:00:00+00:00".to_string());
+    fn test_both_modified_emits_conflict() {
+        let local = make_local("file.md", "new_local");
         let mut remote = make_remote("file.md");
-        remote.last_modified = Some("Mon, 01 Mar 2026 00:00:00 GMT".to_string());
         remote.size = 200;
 
         let mut state = SyncState::default();
@@ -893,23 +933,7 @@ mod tests {
 
         let actions = compute_sync_actions(&[local], &[remote], &state);
         assert_eq!(actions.len(), 1);
-        assert_eq!(actions[0], SyncAction::ConflictLocalWins { path: "file.md".to_string() });
-    }
-
-    #[test]
-    fn test_both_modified_remote_newer() {
-        let mut local = make_local("file.md", "new_local");
-        local.modified_at = Some("2026-01-01T00:00:00+00:00".to_string());
-        let mut remote = make_remote("file.md");
-        remote.last_modified = Some("Sun, 15 Mar 2026 12:00:00 GMT".to_string());
-        remote.size = 200;
-
-        let mut state = SyncState::default();
-        state.files.insert("file.md".to_string(), make_base("old_base"));
-
-        let actions = compute_sync_actions(&[local], &[remote], &state);
-        assert_eq!(actions.len(), 1);
-        assert_eq!(actions[0], SyncAction::ConflictRemoteWins { path: "file.md".to_string() });
+        assert_eq!(actions[0], SyncAction::Conflict { path: "file.md".to_string() });
     }
 
     #[test]
@@ -939,17 +963,15 @@ mod tests {
     }
 
     #[test]
-    fn test_both_added_local_newer() {
-        let mut local = make_local("file.md", "local_content");
-        local.modified_at = Some("2026-03-15T12:00:00+00:00".to_string());
-        let mut remote = make_remote("file.md");
-        remote.last_modified = Some("Mon, 01 Jan 2026 00:00:00 GMT".to_string());
+    fn test_both_added_emits_conflict() {
+        let local = make_local("file.md", "local_content");
+        let remote = make_remote("file.md");
 
         let state = SyncState::default(); // No base entry
 
         let actions = compute_sync_actions(&[local], &[remote], &state);
         assert_eq!(actions.len(), 1);
-        assert_eq!(actions[0], SyncAction::ConflictLocalWins { path: "file.md".to_string() });
+        assert_eq!(actions[0], SyncAction::Conflict { path: "file.md".to_string() });
     }
 
     #[test]
@@ -1117,9 +1139,9 @@ mod tests {
         // .listdata.json inside a list dir (depth 2)
         assert!(is_syncable("My Tasks/.listdata.json"));
         assert!(!is_syncable(".listdata.json")); // root-level not valid
-        // .metadata.json only at root (depth 1)
-        assert!(is_syncable(".metadata.json"));
-        assert!(!is_syncable("My Tasks/.metadata.json")); // nested not valid
+        // .onyx-workspace.json only at root (depth 1)
+        assert!(is_syncable(".onyx-workspace.json"));
+        assert!(!is_syncable("My Tasks/.onyx-workspace.json")); // nested not valid
         // Non-syncable
         assert!(!is_syncable(".syncstate.json"));
         assert!(!is_syncable("random.txt"));
@@ -1133,7 +1155,7 @@ mod tests {
         let root = temp_dir.path();
 
         // Create a workspace-like structure
-        std::fs::write(root.join(".metadata.json"), "{}").unwrap();
+        std::fs::write(root.join(".onyx-workspace.json"), "{}").unwrap();
         std::fs::create_dir_all(root.join("My Tasks")).unwrap();
         std::fs::write(root.join("My Tasks").join(".listdata.json"), "{}").unwrap();
         std::fs::write(root.join("My Tasks").join("task1.md"), "# Task 1").unwrap();
@@ -1144,8 +1166,8 @@ mod tests {
         std::fs::write(root.join(".syncstate.json"), "{}").unwrap();
 
         let files = scan_local_files(root).unwrap();
-        assert_eq!(files.len(), 4); // .metadata.json, .listdata.json, task1.md, task2.md
-        assert!(files.iter().any(|f| f.path == ".metadata.json"));
+        assert_eq!(files.len(), 4); // .onyx-workspace.json, .listdata.json, task1.md, task2.md
+        assert!(files.iter().any(|f| f.path == ".onyx-workspace.json"));
         assert!(files.iter().any(|f| f.path == "My Tasks/.listdata.json"));
         assert!(files.iter().any(|f| f.path == "My Tasks/task1.md"));
         assert!(files.iter().any(|f| f.path == "My Tasks/task2.md"));
@@ -1159,12 +1181,12 @@ mod tests {
     fn test_get_sync_status_no_state() {
         let temp_dir = TempDir::new().unwrap();
         let root = temp_dir.path();
-        std::fs::write(root.join(".metadata.json"), "{}").unwrap();
+        std::fs::write(root.join(".onyx-workspace.json"), "{}").unwrap();
 
         let status = get_sync_status(root).unwrap();
         assert!(status.last_sync.is_none());
         assert_eq!(status.tracked_files, 0);
-        assert_eq!(status.pending_changes, 1); // .metadata.json is new
+        assert_eq!(status.pending_changes, 1); // .onyx-workspace.json is new
         assert_eq!(status.queued_operations, 0);
     }
 
@@ -1186,22 +1208,6 @@ mod tests {
     fn test_parse_timestamp_invalid() {
         let result = parse_timestamp("not a date");
         assert!(result.is_none());
-    }
-
-    #[test]
-    fn test_local_wins_local_newer() {
-        assert!(local_wins(
-            Some("2026-03-15T12:00:00+00:00"),
-            Some("Mon, 01 Jan 2026 00:00:00 GMT"),
-        ));
-    }
-
-    #[test]
-    fn test_local_wins_remote_newer() {
-        assert!(!local_wins(
-            Some("2026-01-01T00:00:00+00:00"),
-            Some("Sun, 15 Mar 2026 12:00:00 GMT"),
-        ));
     }
 
     // --- path_parent ---
