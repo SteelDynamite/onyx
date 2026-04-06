@@ -118,7 +118,10 @@ impl AppConfig {
         // Atomic write: write to temp file then rename to prevent corruption on crash
         let temp = path.with_extension("tmp");
         std::fs::write(&temp, &content)?;
-        std::fs::rename(&temp, path)?;
+        if let Err(e) = std::fs::rename(&temp, path) {
+            let _ = std::fs::remove_file(&temp);
+            return Err(e.into());
+        }
         Ok(())
     }
 

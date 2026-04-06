@@ -508,10 +508,10 @@ pub fn delete_credentials(domain: &str) -> Result<()>;
 
 **Primary**: Platform Keychain via `keyring` crate
 - Store WebDAV username + password in system keychain
-- Key format: `com.onyx.webdav.{server-domain}`
+- Key format: `com.onyx.webdav.{server-domain}::{username}` (the `::` separator prevents key collisions when usernames contain dots)
 - Works on: Windows (Credential Manager), macOS (Keychain), Linux (Secret Service), iOS/Android (Keystore)
 
-**Fallback**: Encrypted local storage if keychain unavailable
+**Fallback**: Not yet implemented (planned: encrypted local storage if keychain unavailable)
 
 ### Dependencies
 
@@ -527,7 +527,7 @@ keyring = "3.0"
 - [x] WebDAV client implementation in core library
 - [x] Credential storage (platform keychain)
 - [x] Bi-directional sync (push/pull)
-- [x] Conflict resolution (last-write-wins)
+- [x] Conflict resolution (remote wins; local recovered as duplicate)
 - [x] Offline queue for pending operations
 - [x] CLI: `sync --setup` command
 - [x] CLI: `sync --push` command
