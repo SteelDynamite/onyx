@@ -5,6 +5,9 @@ use crate::error::{Error, Result};
 
 /// Hard timeout for any WebDAV network operation.
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+/// Maximum size for file downloads (10 MB).
+const MAX_FILE_BYTES: u64 = 10 * 1024 * 1024;
 
 /// Information about a file on the remote WebDAV server.
 #[derive(Debug, Clone)]
@@ -36,8 +39,8 @@ impl WebDavClient {
         let base_url = base_url.trim_end_matches('/').to_string();
         Self {
             _client: Client::builder()
-                .timeout(Duration::from_secs(30))
-                .connect_timeout(Duration::from_secs(10))
+                .timeout(REQUEST_TIMEOUT)
+                .connect_timeout(CONNECT_TIMEOUT)
                 .build()
                 .unwrap_or_else(|_| Client::new()),
             _base_url: base_url,
@@ -64,7 +67,7 @@ impl WebDavClient {
     /// Test connection by issuing a PROPFIND depth 0 on the root.
     pub async fn test_connection(&self) -> Result<()> {
         let resp = self._client
-            .request(reqwest::Method::from_bytes(b"PROPFIND").unwrap(), &self._base_url)
+            .request(reqwest::Method::from_bytes(b"PROPFIND").expect("PROPFIND is a valid HTTP method"), &self._base_url)
             .basic_auth(self._username.as_str(), Some(self._password.as_str()))
             .header("Depth", "0")
             .header("Content-Type", "application/xml")
@@ -86,7 +89,7 @@ impl WebDavClient {
     pub async fn list_files(&self, path: &str) -> Result<Vec<RemoteFileInfo>> {
         let url = self.full_url(path);
         let resp = self._client
-            .request(reqwest::Method::from_bytes(b"PROPFIND").unwrap(), &url)
+            .request(reqwest::Method::from_bytes(b"PROPFIND").expect("PROPFIND is a valid HTTP method"), &url)
             .basic_auth(self._username.as_str(), Some(self._password.as_str()))
             .header("Depth", "1")
             .header("Content-Type", "application/xml")
@@ -129,7 +132,15 @@ impl WebDavClient {
             return Err(Error::WebDav(format!("GET failed with status {}", status)));
         }
 
-        Ok(resp.bytes().await?.to_vec())
+        if resp.content_length().unwrap_or(0) > MAX_FILE_BYTES {
+            return Err(Error::WebDav(format!("File too large (>{}MB)", MAX_FILE_BYTES / (1024 * 1024))));
+        }
+        let bytes = resp.bytes().await?;
+        if bytes.len() as u64 > MAX_FILE_BYTES {
+            return Err(Error::WebDav(format!("File too large (>{}MB)", MAX_FILE_BYTES / (1024 * 1024))));
+        }
+
+        Ok(bytes.to_vec())
     }
 
     /// Upload a file.
@@ -172,7 +183,7 @@ impl WebDavClient {
     pub async fn create_dir(&self, path: &str) -> Result<()> {
         let url = self.full_url(path);
         let resp = self._client
-            .request(reqwest::Method::from_bytes(b"MKCOL").unwrap(), &url)
+            .request(reqwest::Method::from_bytes(b"MKCOL").expect("MKCOL is a valid HTTP method"), &url)
             .basic_auth(self._username.as_str(), Some(self._password.as_str()))
             .send()
             .await?;
@@ -192,7 +203,7 @@ impl WebDavClient {
         let from_url = self.full_url(from);
         let to_url = self.full_url(to);
         let resp = self._client
-            .request(reqwest::Method::from_bytes(b"MOVE").unwrap(), &from_url)
+            .request(reqwest::Method::from_bytes(b"MOVE").expect("MOVE is a valid HTTP method"), &from_url)
             .basic_auth(self._username.as_str(), Some(self._password.as_str()))
             .header("Destination", &to_url)
             .header("Overwrite", "F")

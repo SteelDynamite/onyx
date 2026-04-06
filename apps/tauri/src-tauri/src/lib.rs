@@ -41,6 +41,33 @@ fn lock_state(state: &Mutex<AppState>) -> Result<std::sync::MutexGuard<'_, AppSt
     state.lock().map_err(|e| format!("State lock poisoned: {}", e))
 }
 
+/// Validate that a workspace path is a reasonable directory and not a system path.
+fn validate_workspace_path(path: &str) -> Result<(), String> {
+    let p = PathBuf::from(path);
+    // Reject obviously dangerous paths
+    let normalized = p.to_string_lossy();
+    if normalized.is_empty() {
+        return Err("Workspace path cannot be empty".into());
+    }
+    // Reject paths that are system root directories
+    #[cfg(unix)]
+    {
+        let forbidden = ["/", "/etc", "/usr", "/bin", "/sbin", "/var", "/proc", "/sys", "/dev"];
+        let canonical = normalized.trim_end_matches('/');
+        if forbidden.contains(&canonical) {
+            return Err(format!("Cannot use system directory as workspace: {}", path));
+        }
+    }
+    #[cfg(windows)]
+    {
+        let upper = normalized.to_uppercase();
+        if upper.len() <= 3 && upper.ends_with(":\\") || upper.ends_with(":") {
+            return Err(format!("Cannot use drive root as workspace: {}", path));
+        }
+    }
+    Ok(())
+}
+
 /// Serializable sync result for the frontend.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct SyncResult {
@@ -120,6 +147,7 @@ fn add_workspace(
     path: String,
     state: State<'_, Mutex<AppState>>,
 ) -> Result<(), String> {
+    validate_workspace_path(&path)?;
     let mut s = lock_state(&state)?;
     let ws = WorkspaceConfig::new(name, PathBuf::from(&path));
     let id = s.config.add_workspace(ws);
@@ -243,6 +271,7 @@ async fn rename_workspace(
 
 #[tauri::command]
 fn init_workspace(path: String) -> Result<(), String> {
+    validate_workspace_path(&path)?;
     TaskRepository::init(PathBuf::from(path))
         .map(|_| ())
         .map_err(|e| e.to_string())
@@ -625,7 +654,7 @@ async fn create_remote_workspace(
     } else {
         format!("{}/{}", path.trim_end_matches('/'), ".onyx-workspace.json")
     };
-    client.put_file(&file_path, serde_json::to_string_pretty(&metadata).unwrap().into_bytes())
+    client.put_file(&file_path, serde_json::to_string_pretty(&metadata).map_err(|e| e.to_string())?.into_bytes())
         .await
         .map_err(|e| e.to_string())?;
     Ok(())

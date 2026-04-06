@@ -7,6 +7,30 @@ use uuid::Uuid;
 use crate::error::{Error, Result};
 use crate::models::{Task, TaskList, TaskStatus};
 
+/// Maximum allowed length for task titles.
+const MAX_TITLE_LENGTH: usize = 500;
+/// Maximum allowed length for task descriptions.
+const MAX_DESCRIPTION_LENGTH: usize = 1_000_000; // 1 MB
+/// Maximum allowed length for list names.
+const MAX_LIST_NAME_LENGTH: usize = 255;
+/// Workspace root metadata filename.
+const WORKSPACE_METADATA_FILE: &str = ".onyx-workspace.json";
+/// Per-list metadata filename.
+const LIST_METADATA_FILE: &str = ".listdata.json";
+/// Task file extension.
+const TASK_FILE_EXT: &str = "md";
+/// Default version for tasks without a version field (legacy files).
+const DEFAULT_TASK_VERSION: u64 = 1;
+
+/// Write data to a temporary file then atomically rename to the target path.
+/// Prevents corruption from partial writes on crash.
+fn atomic_write(path: &Path, content: &[u8]) -> std::io::Result<()> {
+    let temp = path.with_extension("tmp");
+    fs::write(&temp, content)?;
+    fs::rename(&temp, path)?;
+    Ok(())
+}
+
 /// Metadata stored in root .onyx-workspace.json
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RootMetadata {
@@ -50,7 +74,7 @@ impl ListMetadata {
 }
 
 fn is_false(v: &bool) -> bool { !v }
-fn default_version() -> u64 { 1 }
+fn default_version() -> u64 { DEFAULT_TASK_VERSION }
 
 /// Frontmatter for task markdown files
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -126,7 +150,7 @@ impl FileSystemStorage {
     }
 
     fn metadata_path(&self) -> PathBuf {
-        self.root_path.join(".onyx-workspace.json")
+        self.root_path.join(WORKSPACE_METADATA_FILE)
     }
 
     fn list_dir_path(&self, list_id: Uuid) -> Result<PathBuf> {
@@ -137,7 +161,7 @@ impl FileSystemStorage {
             let entry = entry?;
             let path = entry.path();
             if path.is_dir() {
-                let listdata_path = path.join(".listdata.json");
+                let listdata_path = path.join(LIST_METADATA_FILE);
                 if listdata_path.exists() {
                     let content = fs::read_to_string(&listdata_path)?;
                     let list_metadata: ListMetadata = serde_json::from_str(&content)?;
@@ -191,7 +215,7 @@ impl FileSystemStorage {
         } else {
             safe_title
         };
-        list_dir.join(format!("{}.md", filename))
+        list_dir.join(format!("{}.{}", filename, TASK_FILE_EXT))
     }
 
     fn parse_markdown_with_frontmatter(&self, content: &str) -> Result<(TaskFrontmatter, String)> {
@@ -247,7 +271,7 @@ impl FileSystemStorage {
     fn write_root_metadata_internal(&self, metadata: &RootMetadata) -> Result<()> {
         let path = self.metadata_path();
         let content = serde_json::to_string_pretty(&metadata)?;
-        fs::write(&path, content)?;
+        atomic_write(&path, content.as_bytes())?;
         Ok(())
     }
 }
@@ -263,7 +287,7 @@ impl Storage for FileSystemStorage {
             let entry = entry?;
             let path = entry.path();
 
-            if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("md") {
+            if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some(TASK_FILE_EXT) {
                 let content = fs::read_to_string(&path)?;
                 let (frontmatter, description) = self.parse_markdown_with_frontmatter(&content)?;
 
@@ -291,6 +315,13 @@ impl Storage for FileSystemStorage {
     }
 
     fn write_task(&mut self, list_id: Uuid, task: &Task) -> Result<()> {
+        if task.title.len() > MAX_TITLE_LENGTH {
+            return Err(Error::InvalidData(format!("Task title too long ({} chars, max {})", task.title.len(), MAX_TITLE_LENGTH)));
+        }
+        if task.description.len() > MAX_DESCRIPTION_LENGTH {
+            return Err(Error::InvalidData(format!("Task description too long ({} bytes, max {})", task.description.len(), MAX_DESCRIPTION_LENGTH)));
+        }
+
         let list_dir = self.list_dir_path(list_id)?;
         let task_path = self.task_file_path(&list_dir, task);
 
@@ -299,7 +330,7 @@ impl Storage for FileSystemStorage {
             let entry = entry?;
             let path = entry.path();
             if path == task_path { continue; }
-            if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("md") {
+            if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some(TASK_FILE_EXT) {
                 if let Ok(content) = fs::read_to_string(&path) {
                     if let Ok((fm, _)) = self.parse_markdown_with_frontmatter(&content) {
                         if fm.id == task.id {
@@ -352,7 +383,7 @@ impl Storage for FileSystemStorage {
             let entry = entry?;
             let path = entry.path();
 
-            if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("md") {
+            if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some(TASK_FILE_EXT) {
                 let content = fs::read_to_string(&path)?;
                 let (frontmatter, description) = self.parse_markdown_with_frontmatter(&content)?;
 
@@ -387,10 +418,13 @@ impl Storage for FileSystemStorage {
             if entries.len() > 1 {
                 entries.sort_by(|a, b| b.1.version.cmp(&a.1.version));
                 for (stale_path, _) in entries.drain(1..) {
-                    let _ = fs::remove_file(&stale_path);
+                    if let Err(e) = fs::remove_file(&stale_path) {
+                        eprintln!("Warning: failed to remove stale duplicate task file {:?}: {}", stale_path, e);
+                    }
                 }
             }
-            let (_, task) = entries.into_iter().next().unwrap();
+            let (_, task) = entries.into_iter().next()
+                .ok_or_else(|| Error::InvalidData("Empty dedup entries for task".to_string()))?;
             tasks.push(task);
         }
 
@@ -407,6 +441,12 @@ impl Storage for FileSystemStorage {
     }
 
     fn create_list(&mut self, name: String) -> Result<TaskList> {
+        if name.trim().is_empty() {
+            return Err(Error::InvalidData("List name cannot be empty".to_string()));
+        }
+        if name.len() > MAX_LIST_NAME_LENGTH {
+            return Err(Error::InvalidData(format!("List name too long ({} chars, max {})", name.len(), MAX_LIST_NAME_LENGTH)));
+        }
         let list_dir = self.list_dir_path_by_name(&name)?;
 
         if list_dir.exists() {
@@ -420,7 +460,7 @@ impl Storage for FileSystemStorage {
 
         let metadata_path = list_dir.join(".listdata.json");
         let content = serde_json::to_string_pretty(&list_metadata)?;
-        fs::write(&metadata_path, content)?;
+        atomic_write(&metadata_path, content.as_bytes())?;
 
         // Add to root metadata
         let mut root_metadata = self.read_root_metadata_internal()?;
@@ -453,7 +493,7 @@ impl Storage for FileSystemStorage {
             let path = entry.path();
 
             if path.is_dir() {
-                let listdata_path = path.join(".listdata.json");
+                let listdata_path = path.join(LIST_METADATA_FILE);
                 if listdata_path.exists() {
                     let content = fs::read_to_string(&listdata_path)?;
                     let list_metadata: ListMetadata = serde_json::from_str(&content)?;
@@ -508,6 +548,12 @@ impl Storage for FileSystemStorage {
     }
 
     fn rename_list(&mut self, list_id: Uuid, new_name: String) -> Result<()> {
+        if new_name.trim().is_empty() {
+            return Err(Error::InvalidData("List name cannot be empty".to_string()));
+        }
+        if new_name.len() > MAX_LIST_NAME_LENGTH {
+            return Err(Error::InvalidData(format!("List name too long ({} chars, max {})", new_name.len(), MAX_LIST_NAME_LENGTH)));
+        }
         let old_dir = self.list_dir_path(list_id)?;
         let new_dir = self.list_dir_path_by_name(&new_name)?;
 
@@ -523,7 +569,7 @@ impl Storage for FileSystemStorage {
         let mut metadata: ListMetadata = serde_json::from_str(&content)?;
         metadata.updated_at = Utc::now();
         let json = serde_json::to_string_pretty(&metadata)?;
-        fs::write(&metadata_path, json)?;
+        atomic_write(&metadata_path, json.as_bytes())?;
 
         Ok(())
     }
@@ -554,7 +600,7 @@ impl Storage for FileSystemStorage {
         let metadata_path = list_dir.join(".listdata.json");
 
         let content = serde_json::to_string_pretty(&metadata)?;
-        fs::write(&metadata_path, content)?;
+        atomic_write(&metadata_path, content.as_bytes())?;
         Ok(())
     }
 }

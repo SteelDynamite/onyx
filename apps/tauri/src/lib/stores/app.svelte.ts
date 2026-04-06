@@ -369,7 +369,9 @@ function startAutoSync() {
   _syncInterval = setInterval(triggerSync, syncIntervalSecs * 1000);
   getCurrentWindow().onFocusChanged(({ payload: focused }) => {
     if (focused && Date.now() - lastSyncTime > SYNC_FOCUS_THRESHOLD_MS) triggerSync();
-  }).then((unlisten) => { _focusUnlisten = unlisten; });
+  }).then((unlisten) => { _focusUnlisten = unlisten; }).catch((e) => {
+    console.warn("Failed to set up focus listener:", e);
+  });
 }
 
 function stopAutoSync() {

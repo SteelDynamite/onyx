@@ -18,6 +18,13 @@
   let parentTask = $derived(taskStack.length >= 1 ? app.tasks.find(t => t.id === taskStack[0]) ?? null : null);
   let subtaskDetail = $derived(taskStack.length >= 2 ? app.tasks.find(t => t.id === taskStack[1]) ?? null : null);
 
+  // Clear taskStack when the viewed task no longer exists (e.g. deleted or list switched)
+  $effect(() => {
+    if (taskStack.length > 0 && !parentTask) {
+      taskStack = [];
+    }
+  });
+
   function openTask(task: Task) {
     taskStack = [task.id];
   }
@@ -282,7 +289,7 @@
     <div class="flex-1 overflow-y-auto py-2">
       {#each app.lists as list (list.id)}
         <button
-          onclick={() => { app.selectList(list.id); closeDrawer(); }}
+          onclick={() => { app.selectList(list.id); taskStack = []; closeDrawer(); }}
           class="group flex w-full items-center gap-2 px-5 py-2.5 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10 {list.id === app.activeListId ? 'font-bold' : ''}"
         >
           {#if list.id === app.activeListId}
