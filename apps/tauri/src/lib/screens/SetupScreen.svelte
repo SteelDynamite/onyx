@@ -106,12 +106,14 @@
     browseLoading = true;
     browseError = null;
     try {
-      browseEntries = await invoke("list_remote_folder", {
+      const entries: typeof browseEntries = await invoke("list_remote_folder", {
         url: webdavUrl,
         username: webdavUser,
         password: webdavPass,
         path: currentBrowsePath,
       });
+      entries.sort((a, b) => (a.is_workspace === b.is_workspace ? 0 : a.is_workspace ? -1 : 1));
+      browseEntries = entries;
     } catch (e) {
       browseError = String(e);
       browseEntries = [];

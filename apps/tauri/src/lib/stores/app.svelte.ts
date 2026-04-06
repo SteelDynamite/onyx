@@ -184,7 +184,14 @@ async function loadLists() {
 async function loadTasks() {
   if (!activeListId) return;
   try {
-    tasks = await invoke<Task[]>("list_tasks", { listId: activeListId });
+    const loaded = await invoke<Task[]>("list_tasks", { listId: activeListId });
+    // Deduplicate by task ID — sync conflicts can produce files with the same UUID
+    const seen = new Set<string>();
+    tasks = loaded.filter((t) => {
+      if (seen.has(t.id)) return false;
+      seen.add(t.id);
+      return true;
+    });
   } catch (e) {
     error = String(e);
   }
