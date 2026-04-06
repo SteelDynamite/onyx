@@ -61,9 +61,8 @@ Tasks are stored as individual `.md` files with YAML frontmatter:
 ---
 id: 550e8400-e29b-41d4-a716-446655440000
 status: backlog
+version: 3
 due: 2026-11-15T14:00:00Z
-created: 2026-10-26T10:00:00Z
-updated: 2026-10-26T12:30:00Z
 parent: 550e8400-e29b-41d4-a716-446655440001
 ---
 
@@ -86,8 +85,8 @@ Task {
     description: String,              // Markdown content
     status: TaskStatus,         // Backlog or Completed
     due_date: Option<DateTime>,
-    created_at: DateTime,
-    updated_at: DateTime,
+    has_time: bool,             // Whether due_date includes a specific time
+    version: u64,               // Increments on every write; used for sync dedup
     parent_id: Option<Uuid>,    // For subtasks
 }
 

@@ -167,9 +167,8 @@ Tasks are stored as markdown files with YAML frontmatter (Obsidian-compatible):
 ---
 id: 550e8400-e29b-41d4-a716-446655440000
 status: backlog
+version: 3
 due: 2026-11-15T14:00:00Z
-created: 2026-10-26T10:00:00Z
-updated: 2026-10-26T12:30:00Z
 ---
 
 Task description and notes go here in **markdown** format.

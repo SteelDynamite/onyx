@@ -43,7 +43,7 @@ Two-crate workspace (`resolver = "2"`, edition 2021) plus a Tauri app:
 
 ### On-disk format
 
-Workspaces are plain folders. Each task list is a subfolder containing `.listdata.json` (metadata/ordering) and one `.md` file per task. The workspace root has `.onyx-workspace.json` for list ordering and workspace detection. Sync only processes files at expected depths: `.onyx-workspace.json` at root, `.listdata.json` and `*.md` inside list directories.
+Workspaces are plain folders. Each task list is a subfolder containing `.listdata.json` (metadata/ordering) and one `.md` file per task. The workspace root has `.onyx-workspace.json` for list ordering and workspace detection. Sync only processes files at expected depths: `.onyx-workspace.json` at root, `.listdata.json` and `*.md` inside list directories. Task frontmatter contains `id`, `status`, `version` (u64, increments on every write, defaults to 1 for legacy files), and optionally `due`, `has_time`, `parent` (omitted when false/null). `list_tasks` auto-deduplicates by UUID, keeping the highest-version file and deleting stale copies.
 
 ### Tauri GUI structure
 
