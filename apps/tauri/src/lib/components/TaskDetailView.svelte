@@ -148,7 +148,7 @@
 </header>
 
 <!-- Content -->
-<main class="relative flex-1 overflow-y-auto px-4 pt-4">
+<main class="relative flex-1 overflow-y-auto px-4 pt-4" style="padding-bottom: max(2rem, var(--safe-bottom))">
   <!-- Kebab menu -->
   <div class="absolute right-3 top-2" bind:this={menuEl}>
     <button
