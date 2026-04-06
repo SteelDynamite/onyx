@@ -126,7 +126,9 @@ pub fn retarget(name: String, path: String) -> Result<()> {
     let id = resolve_name(&config, &name)?;
 
     // Update path
-    config.workspaces.get_mut(&id).unwrap().path = path_buf.clone();
+    config.workspaces.get_mut(&id)
+        .ok_or_else(|| anyhow::anyhow!("Workspace '{}' disappeared from config", name))?
+        .path = path_buf.clone();
     save_config(&config)?;
 
     output::success(&format!("Workspace \"{}\" now points to {}", name, path_buf.display()));
@@ -221,7 +223,9 @@ pub fn migrate(name: String, new_path: String) -> Result<()> {
     }
 
     // Update config
-    config.workspaces.get_mut(&id).unwrap().path = new_path_buf.clone();
+    config.workspaces.get_mut(&id)
+        .ok_or_else(|| anyhow::anyhow!("Workspace '{}' disappeared from config", name))?
+        .path = new_path_buf.clone();
     save_config(&config)?;
 
     output::success(&format!("Migrated {} items to {}", moved.len(), new_path_buf.display()));

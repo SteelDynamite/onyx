@@ -41,6 +41,13 @@ fn lock_state(state: &Mutex<AppState>) -> Result<std::sync::MutexGuard<'_, AppSt
     state.lock().map_err(|e| format!("State lock poisoned: {}", e))
 }
 
+impl AppState {
+    /// Persist config to disk, converting errors to String for Tauri commands.
+    fn save_config(&self) -> Result<(), String> {
+        self.config.save_to_file(&self.config_path).map_err(|e| e.to_string())
+    }
+}
+
 /// Validate that a workspace path is a reasonable directory and not a system path.
 fn validate_workspace_path(path: &str) -> Result<(), String> {
     let p = PathBuf::from(path);
@@ -138,7 +145,7 @@ fn get_config(state: State<'_, Mutex<AppState>>) -> Result<AppConfig, String> {
 #[tauri::command]
 fn save_config(state: State<'_, Mutex<AppState>>) -> Result<(), String> {
     let s = lock_state(&state)?;
-    s.config.save_to_file(&s.config_path).map_err(|e| e.to_string())
+    s.save_config()
 }
 
 #[tauri::command]
@@ -155,9 +162,7 @@ fn add_workspace(
         .set_current_workspace(id)
         .map_err(|e| e.to_string())?;
     s.repo = None;
-    s.config
-        .save_to_file(&s.config_path.clone())
-        .map_err(|e| e.to_string())
+    s.save_config()
 }
 
 #[tauri::command]
@@ -170,9 +175,7 @@ fn set_current_workspace(
         .set_current_workspace(id)
         .map_err(|e| e.to_string())?;
     s.repo = None;
-    s.config
-        .save_to_file(&s.config_path.clone())
-        .map_err(|e| e.to_string())
+    s.save_config()
 }
 
 #[tauri::command]
@@ -183,9 +186,7 @@ fn remove_workspace(
     let mut s = lock_state(&state)?;
     s.config.remove_workspace(&id);
     s.repo = None;
-    s.config
-        .save_to_file(&s.config_path.clone())
-        .map_err(|e| e.to_string())
+    s.save_config()
 }
 
 #[tauri::command]
@@ -224,7 +225,7 @@ async fn rename_workspace(
                 ws.path = new_path;
             }
             s.repo = None;
-            s.config.save_to_file(&s.config_path.clone()).map_err(|e| e.to_string())?;
+            s.save_config()?;
         }
         WorkspaceMode::Webdav => {
             // Rename the remote folder via WebDAV MOVE
@@ -260,7 +261,7 @@ async fn rename_workspace(
                 ws.webdav_path = Some(new_remote_path);
             }
             s.repo = None;
-            s.config.save_to_file(&s.config_path.clone()).map_err(|e| e.to_string())?;
+            s.save_config()?;
         }
     }
 
@@ -521,9 +522,7 @@ fn set_webdav_config(
     if let Some(ws) = s.config.workspaces.get_mut(&workspace_id) {
         ws.webdav_url = Some(webdav_url);
     }
-    s.config
-        .save_to_file(&s.config_path.clone())
-        .map_err(|e| e.to_string())
+    s.save_config()
 }
 
 #[tauri::command]
@@ -536,7 +535,7 @@ fn set_workspace_theme(
     if let Some(ws) = s.config.workspaces.get_mut(&workspace_id) {
         ws.theme = theme;
     }
-    s.config.save_to_file(&s.config_path.clone()).map_err(|e| e.to_string())
+    s.save_config()
 }
 
 #[tauri::command]
@@ -549,7 +548,7 @@ fn set_sync_interval(
     if let Some(ws) = s.config.workspaces.get_mut(&workspace_id) {
         ws.sync_interval_secs = interval_secs;
     }
-    s.config.save_to_file(&s.config_path.clone()).map_err(|e| e.to_string())
+    s.save_config()
 }
 
 /// A remote folder entry returned to the frontend.
@@ -693,7 +692,7 @@ fn add_webdav_workspace(
         .and_then(|rest| rest.split('/').next())
         .unwrap_or("")
         .to_string();
-    s.config.save_to_file(&s.config_path.clone()).map_err(|e| e.to_string())?;
+    s.save_config()?;
     drop(s);
     let creds = app_handle.state::<Credentials<tauri::Wry>>();
     creds.store(&domain, &username, &password)?;
@@ -785,7 +784,7 @@ async fn sync_workspace(
         if let Some(ws) = s.config.workspaces.get_mut(&workspace_id) {
             ws.last_sync = Some(Utc::now());
         }
-        s.config.save_to_file(&s.config_path.clone()).map_err(|e| e.to_string())?;
+        s.save_config()?;
     }
 
     Ok(result.into())
@@ -803,7 +802,10 @@ fn start_watcher(handle: tauri::AppHandle, path: PathBuf) {
     let debouncer = new_debouncer(
         std::time::Duration::from_millis(500),
         move |events: Result<Vec<notify_debouncer_mini::DebouncedEvent>, notify::Error>| {
-            let Ok(events) = events else { return };
+            let Ok(events) = events else {
+                eprintln!("File watcher error: {:?}", events.unwrap_err());
+                return;
+            };
             // Only care about data file changes
             let has_data_change = events.iter().any(|e| {
                 if e.kind != DebouncedEventKind::Any { return false; }
