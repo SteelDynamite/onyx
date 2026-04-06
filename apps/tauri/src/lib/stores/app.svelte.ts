@@ -25,6 +25,7 @@ let activeListId = $state<string | null>(null);
 let tasks = $state<Task[]>([]);
 let osDark = globalThis.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
 let syncing = $state(false);
+let initialSync = $state(false);
 let syncStatus = $state<"idle" | "synced" | "error" | "offline">("idle");
 let lastSyncResult = $state<SyncResult | null>(null);
 let error = $state<string | null>(null);
@@ -398,15 +399,23 @@ async function addWebdavWorkspace(name: string, webdavUrl: string, webdavPath: s
   try {
     await invoke("add_webdav_workspace", { name, webdavUrl, webdavPath, username, password });
     config = await invoke<AppConfig>("get_config");
+    screen = "tasks";
+    error = null;
+    // Run initial sync before showing content so the workspace isn't empty
+    initialSync = true;
+    try {
+      await triggerSync();
+    } finally {
+      initialSync = false;
+    }
     await loadLists();
     if (config?.current_workspace) {
       const ws = config.workspaces[config.current_workspace];
       if (ws) invoke("watch_workspace", { path: ws.path }).catch((e) => console.warn("File watcher failed:", e));
     }
-    screen = "tasks";
-    error = null;
     if (isWebdav) startAutoSync();
   } catch (e) {
+    initialSync = false;
     error = String(e);
   }
 }
@@ -474,6 +483,9 @@ export const app = {
   },
   get syncing() {
     return syncing;
+  },
+  get initialSync() {
+    return initialSync;
   },
   get syncStatus() {
     return syncStatus;
