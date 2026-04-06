@@ -192,6 +192,7 @@ async function loadTasks() {
 
 async function selectList(id: string) {
   activeListId = id;
+  tasks = [];
   await loadTasks();
 }
 
@@ -341,8 +342,10 @@ async function triggerSync() {
     await loadLists();
   } catch (e) {
     const msg = String(e);
-    syncStatus = msg.includes("timeout") || msg.includes("connect") || msg.includes("network") ? "offline" : "error";
-    error = msg;
+    const isTransient = /timeout|connect|network|unreachable|refused/i.test(msg);
+    syncStatus = isTransient ? "offline" : "error";
+    // Only show the error banner for non-transient failures; connectivity issues just update the status dot
+    if (!isTransient) error = msg;
   } finally {
     syncing = false;
   }
