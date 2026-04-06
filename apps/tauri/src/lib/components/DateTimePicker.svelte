@@ -121,7 +121,7 @@
     </div>
 
     <!-- Calendar grid -->
-    <div class="grid grid-cols-7 px-4 pb-2">
+    <div class="grid grid-cols-7 content-start px-4 pb-2" style="height: 192px;">
       {#each calendarCells as day}
         {#if day === null}
           <div></div>
