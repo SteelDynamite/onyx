@@ -35,8 +35,9 @@ let _syncInterval: ReturnType<typeof setInterval> | null = null;
 let _syncDebounce: ReturnType<typeof setTimeout> | null = null;
 let _focusUnlisten: (() => void) | null = null;
 const DEFAULT_SYNC_INTERVAL_SECS = 60;
+const DEFAULT_SYNC_INTERVAL_UNFOCUSED_SECS = 600;
 const SYNC_DEBOUNCE_MS = 5_000;
-const SYNC_FOCUS_THRESHOLD_MS = 30_000;
+let _appFocused = true;
 
 // ── Derived ──────────────────────────────────────────────────────────
 
@@ -84,6 +85,11 @@ let syncIntervalSecs = $derived(
   config?.current_workspace
     ? config.workspaces[config.current_workspace]?.sync_interval_secs ?? DEFAULT_SYNC_INTERVAL_SECS
     : DEFAULT_SYNC_INTERVAL_SECS,
+);
+let syncIntervalUnfocusedSecs = $derived(
+  config?.current_workspace
+    ? config.workspaces[config.current_workspace]?.sync_interval_unfocused_secs ?? DEFAULT_SYNC_INTERVAL_UNFOCUSED_SECS
+    : DEFAULT_SYNC_INTERVAL_UNFOCUSED_SECS,
 );
 
 // ── Actions ──────────────────────────────────────────────────────────
@@ -133,6 +139,7 @@ async function switchWorkspace(id: string) {
     await invoke("set_current_workspace", { id });
     config = await invoke<AppConfig>("get_config");
     activeListId = null;
+    tasks = [];
     await loadLists();
     const ws = config?.workspaces[id];
     if (ws) invoke("watch_workspace", { path: ws.path }).catch((e) => console.warn("File watcher failed:", e));
@@ -363,21 +370,26 @@ function debouncedSync() {
   _syncDebounce = setTimeout(() => { _syncDebounce = null; triggerSync(); }, SYNC_DEBOUNCE_MS);
 }
 
+function restartSyncInterval() {
+  if (_syncInterval) clearInterval(_syncInterval);
+  var secs = _appFocused ? syncIntervalSecs : syncIntervalUnfocusedSecs;
+  _syncInterval = setInterval(triggerSync, secs * 1000);
+}
+
 function startAutoSync() {
   stopAutoSync();
+  _appFocused = true;
   triggerSync();
-  _syncInterval = setInterval(triggerSync, syncIntervalSecs * 1000);
-  // Store the promise-returned unlisten function, ensuring we clean up any
-  // previous listener before assigning a new one.
+  restartSyncInterval();
   getCurrentWindow().onFocusChanged(({ payload: focused }) => {
-    if (focused && Date.now() - lastSyncTime > SYNC_FOCUS_THRESHOLD_MS) triggerSync();
+    // Sync on re-focus if stale beyond the focused interval
+    if (focused && !_appFocused && Date.now() - lastSyncTime > syncIntervalSecs * 1000)
+      triggerSync();
+    _appFocused = focused;
+    restartSyncInterval();
   }).then((unlisten) => {
-    // If stopAutoSync was called while the promise was pending, immediately clean up
-    if (!_syncInterval) {
-      unlisten();
-    } else {
-      _focusUnlisten = unlisten;
-    }
+    if (!_syncInterval) unlisten();
+    else _focusUnlisten = unlisten;
   }).catch((e) => {
     console.warn("Failed to set up focus listener:", e);
   });
@@ -393,6 +405,20 @@ async function setSyncInterval(secs: number | null) {
   if (!config?.current_workspace) return;
   try {
     await invoke("set_sync_interval", {
+      workspaceId: config.current_workspace,
+      intervalSecs: secs,
+    });
+    config = await invoke<AppConfig>("get_config");
+    if (isWebdav) startAutoSync();
+  } catch (e) {
+    error = String(e);
+  }
+}
+
+async function setSyncIntervalUnfocused(secs: number | null) {
+  if (!config?.current_workspace) return;
+  try {
+    await invoke("set_sync_interval_unfocused", {
       workspaceId: config.current_workspace,
       intervalSecs: secs,
     });
@@ -517,6 +543,9 @@ export const app = {
   get syncIntervalSecs() {
     return syncIntervalSecs;
   },
+  get syncIntervalUnfocusedSecs() {
+    return syncIntervalUnfocusedSecs;
+  },
   get lastSyncResult() {
     return lastSyncResult;
   },
@@ -552,6 +581,7 @@ export const app = {
   startAutoSync,
   stopAutoSync,
   setSyncInterval,
+  setSyncIntervalUnfocused,
   setTheme,
   addWebdavWorkspace,
   forgetMissingWorkspace,

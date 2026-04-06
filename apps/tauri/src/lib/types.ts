@@ -29,6 +29,7 @@ export interface WorkspaceConfig {
   last_sync: string | null;
   theme: string | null;
   sync_interval_secs: number | null;
+  sync_interval_unfocused_secs: number | null;
 }
 
 export interface AppConfig {

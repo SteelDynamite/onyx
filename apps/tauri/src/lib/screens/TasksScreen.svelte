@@ -25,6 +25,7 @@
     }
   });
 
+
   function openTask(task: Task) {
     taskStack = [task.id];
   }

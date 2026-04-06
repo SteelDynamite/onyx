@@ -205,7 +205,7 @@
       </div>
 
       <div class="mt-3">
-        <label class="mb-1 block text-xs font-medium opacity-60">Sync interval</label>
+        <label class="mb-1 block text-xs font-medium opacity-60">Sync interval (focused)</label>
         <select
           value={String(app.syncIntervalSecs)}
           onchange={(e) => {
@@ -219,6 +219,24 @@
           <option value="120">2 minutes</option>
           <option value="300">5 minutes</option>
           <option value="600">10 minutes</option>
+        </select>
+      </div>
+
+      <div class="mt-3">
+        <label class="mb-1 block text-xs font-medium opacity-60">Sync interval (background)</label>
+        <select
+          value={String(app.syncIntervalUnfocusedSecs)}
+          onchange={(e) => {
+            const val = parseInt((e.target as HTMLSelectElement).value);
+            app.setSyncIntervalUnfocused(val === 600 ? null : val);
+          }}
+          class="w-full appearance-none rounded-lg border border-border-light bg-surface-light px-3 py-2 text-sm text-text-light outline-none focus:border-primary dark:border-border-dark dark:bg-surface-dark dark:text-text-dark"
+        >
+          <option value="60">1 minute</option>
+          <option value="120">2 minutes</option>
+          <option value="300">5 minutes</option>
+          <option value="600">10 minutes</option>
+          <option value="1800">30 minutes</option>
         </select>
       </div>
     </section>
