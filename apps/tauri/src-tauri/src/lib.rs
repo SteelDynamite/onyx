@@ -17,6 +17,7 @@ use onyx_core::{
     sync::{self, SyncMode, SyncResult as CoreSyncResult},
     webdav,
 };
+use tauri_plugin_credentials::Credentials;
 
 #[cfg(not(target_os = "android"))]
 /// Active file watcher stored globally so it lives for the app lifetime.
@@ -163,6 +164,7 @@ fn remove_workspace(
 async fn rename_workspace(
     id: String,
     new_name: String,
+    app_handle: tauri::AppHandle,
     state: State<'_, Mutex<AppState>>,
 ) -> Result<(), String> {
     // Extract workspace info while holding the lock briefly
@@ -205,11 +207,8 @@ async fn rename_workspace(
                 .split("://").nth(1)
                 .and_then(|rest| rest.split('/').next())
                 .unwrap_or("").to_string();
-            let (username, password) = tokio::task::spawn_blocking(move || {
-                webdav::load_credentials(&domain)
-                    .map(|(u, p)| ((*u).clone(), (*p).clone()))
-                    .map_err(|e| e.to_string())
-            }).await.map_err(|e| e.to_string())??;
+            let creds = app_handle.state::<Credentials<tauri::Wry>>();
+            let (username, password) = creds.load(&domain)?;
 
             let client = webdav::WebDavClient::new(base_url, &username, &password)
                 .map_err(|e| e.to_string())?;
@@ -639,6 +638,7 @@ fn add_webdav_workspace(
     webdav_path: String,
     username: String,
     password: String,
+    app_handle: tauri::AppHandle,
     state: State<'_, Mutex<AppState>>,
 ) -> Result<(), String> {
     let mut s = lock_state(&state)?;
@@ -666,7 +666,8 @@ fn add_webdav_workspace(
         .to_string();
     s.config.save_to_file(&s.config_path.clone()).map_err(|e| e.to_string())?;
     drop(s);
-    webdav::store_credentials(&domain, &username, &password).map_err(|e| e.to_string())?;
+    let creds = app_handle.state::<Credentials<tauri::Wry>>();
+    creds.store(&domain, &username, &password)?;
     Ok(())
 }
 
@@ -675,23 +676,19 @@ async fn store_credentials(
     domain: String,
     username: String,
     password: String,
+    app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
-    tokio::task::spawn_blocking(move || {
-        webdav::store_credentials(&domain, &username, &password).map_err(|e| e.to_string())
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    let creds = app_handle.state::<Credentials<tauri::Wry>>();
+    creds.store(&domain, &username, &password)
 }
 
 #[tauri::command]
-async fn load_credentials(domain: String) -> Result<(String, String), String> {
-    tokio::task::spawn_blocking(move || {
-        webdav::load_credentials(&domain)
-            .map(|(u, p)| ((*u).clone(), (*p).clone()))
-            .map_err(|e| e.to_string())
-    })
-    .await
-    .map_err(|e| e.to_string())?
+async fn load_credentials(
+    domain: String,
+    app_handle: tauri::AppHandle,
+) -> Result<(String, String), String> {
+    let creds = app_handle.state::<Credentials<tauri::Wry>>();
+    creds.load(&domain)
 }
 
 #[tauri::command]
@@ -712,6 +709,7 @@ async fn test_webdav_connection(
 async fn sync_workspace(
     workspace_id: String,
     mode: String,
+    app_handle: tauri::AppHandle,
     state: State<'_, Mutex<AppState>>,
 ) -> Result<SyncResult, String> {
     // Step 1: read config — combine base URL with the user-chosen remote path
@@ -734,13 +732,8 @@ async fn sync_workspace(
         .and_then(|rest| rest.split('/').next())
         .unwrap_or("")
         .to_string();
-    let (username, password) = tokio::task::spawn_blocking(move || {
-        webdav::load_credentials(&domain)
-            .map(|(u, p)| ((*u).clone(), (*p).clone()))
-            .map_err(|e| e.to_string())
-    })
-    .await
-    .map_err(|e| e.to_string())??;
+    let creds = app_handle.state::<Credentials<tauri::Wry>>();
+    let (username, password) = creds.load(&domain)?;
 
     let sync_mode = match mode.as_str() {
         "push" => SyncMode::Push,
@@ -831,6 +824,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_os::init())
+        .plugin(tauri_plugin_credentials::init())
         .setup(|app| {
             // Resolve app data dir and config path
             let app_data_dir = app.path().app_data_dir()
