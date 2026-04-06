@@ -60,7 +60,9 @@
       {:else if app.screen === "setup"}
         <SetupScreen cancellable={app.hasWorkspace} />
       {:else}
-        <TasksScreen />
+        {#key app.config?.current_workspace}
+          <TasksScreen />
+        {/key}
       {/if}
     </div>
   </div>

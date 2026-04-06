@@ -133,6 +133,7 @@ async function switchWorkspace(id: string) {
     await invoke("set_current_workspace", { id });
     config = await invoke<AppConfig>("get_config");
     activeListId = null;
+    tasks = [];
     await loadLists();
     const ws = config?.workspaces[id];
     if (ws) invoke("watch_workspace", { path: ws.path }).catch((e) => console.warn("File watcher failed:", e));
