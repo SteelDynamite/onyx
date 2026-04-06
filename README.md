@@ -40,6 +40,7 @@ onyx/
 - Subtask hierarchy (parent_id)
 - WebDAV sync with three-way diff and offline queue
 - Platform keychain credential storage (feature-gated for Android)
+- Checksum-based conflict resolution (remote wins, local recovered as duplicate)
 
 ### CLI (`onyx-cli`)
 - Workspace management (init, add, list, switch, remove, retarget, migrate)
@@ -62,7 +63,7 @@ onyx/
 - Keyboard shortcuts (Escape priority chain)
 - WebDAV setup flow with credential auto-population
 - File watcher (auto-reloads on external changes)
-- Sync status indicators and push/pull/full mode selection
+- Auto-sync with configurable interval, status indicators
 - Custom confirmation dialogs
 - Desktop packaging (Linux: AppImage + .deb; Windows: MSI)
 
@@ -182,7 +183,7 @@ Task description and notes go here in **markdown** format.
 
 ```
 ~/Documents/Tasks/           # User-selected folder
-├── .metadata.json           # Global: list ordering, last opened list
+├── .onyx-workspace.json     # Workspace metadata: list ordering, detection
 ├── My Tasks/                # Task list folder
 │   ├── .listdata.json       # List metadata: task order, id, timestamps
 │   ├── Buy groceries.md     # Individual task files

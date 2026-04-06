@@ -31,19 +31,19 @@ Two-crate workspace (`resolver = "2"`, edition 2021) plus a Tauri app:
 
 - **onyx-core** — Pure Rust library. Storage trait with `FileSystemStorage` implementation, `TaskRepository` (main API), data models, config, error types. No CLI/UI dependencies. `keyring` feature-gated behind `keyring-storage` (default on) for Android compatibility.
 - **onyx-cli** — CLI frontend using clap. Commands are in `src/commands/` (init, workspace, list, task, group). Output formatting in `src/output.rs`.
-- **apps/tauri/** — Tauri v2 GUI. Svelte 5 frontend in `src/`, Rust backend in `src-tauri/` with Tauri commands that call into `onyx-core`. `notify` crate feature-gated for Android.
+- **apps/tauri/** — Tauri v2 GUI. Svelte 5 frontend in `src/`, Rust backend in `src-tauri/` with Tauri commands that call into `onyx-core`. `notify` crate feature-gated for Android. `tauri-plugin-credentials/` provides cross-platform credential storage (Android Keystore via EncryptedSharedPreferences, desktop via keyring crate).
 
 ### Key patterns
 
 - **Storage trait** (`storage.rs`): Strategy pattern for task persistence. `FileSystemStorage` reads/writes markdown files with YAML frontmatter and JSON metadata files.
 - **Repository** (`repository.rs`): `TaskRepository` wraps a `Storage` impl and provides the public API for task/list CRUD, ordering, and grouping. Tests live here.
-- **Config** (`config.rs`): `AppConfig` manages named workspaces with paths, mode (local/webdav), theme, and WebDAV URL. Stored in platform-specific config dirs via the `directories` crate.
-- **Sync** (`sync.rs`): Three-way diff sync with offline queue. Auto-appends `Onyx/` to WebDAV URL. Wrapped in `tokio::time::timeout` (60s) to handle unreachable servers on Windows.
-- **WebDAV** (`webdav.rs`): reqwest client with rustls-tls, 30s request timeout, 10s connect timeout. Credentials stored via `keyring` crate (feature-gated). `Zeroizing<String>` for credential fields. Scoped keyring keys (`com.onyx.webdav.<domain>::<username>`); auto-migrates legacy dot-separated format on load. 10MB PROPFIND response cap.
+- **Config** (`config.rs`): `AppConfig` manages workspaces keyed by UUID string. `WorkspaceConfig` stores `name`, `path`, `mode` (Local/Webdav), `webdav_url`, `webdav_path` (user-selected remote folder), `theme`, and `sync_interval_secs`. `add_workspace` returns a generated UUID. Stored in platform-specific config dirs via the `directories` crate.
+- **Sync** (`sync.rs`): Three-way diff sync with offline queue. Checksum-based conflict resolution: downloads remote, compares SHA-256 — identical content is a false conflict (skipped); when different, remote wins and local is recovered as a duplicate with a new UUID and `[RECOVERED FROM CONFLICT]` prefix. Auto-sync lifecycle: periodic polling (configurable interval, default 60s), debounced file-change (5s), window-focus (30s stale threshold). Wrapped in `tokio::time::timeout` (60s) to handle unreachable servers on Windows.
+- **WebDAV** (`webdav.rs`): reqwest client with rustls-tls, 30s request timeout, 10s connect timeout. Rejects non-HTTPS URLs. `Zeroizing<String>` for credential fields. `move_resource` method for WebDAV MOVE (workspace rename). 10MB PROPFIND response cap. Desktop credentials via `keyring` crate (feature-gated); Tauri GUI uses `tauri-plugin-credentials` for cross-platform support (Android Keystore + desktop keychain).
 
 ### On-disk format
 
-Workspaces are plain folders. Each task list is a subfolder containing `.listdata.json` (metadata/ordering) and one `.md` file per task. The workspace root has `.onyx-workspace.json` for list ordering and workspace detection.
+Workspaces are plain folders. Each task list is a subfolder containing `.listdata.json` (metadata/ordering) and one `.md` file per task. The workspace root has `.onyx-workspace.json` for list ordering and workspace detection. Sync only processes files at expected depths: `.onyx-workspace.json` at root, `.listdata.json` and `*.md` inside list directories.
 
 ### Tauri GUI structure
 
@@ -66,9 +66,9 @@ Pre-alpha. No users, no released builds, no data to migrate. Breaking changes to
 ### Current state (2026-04-05)
 
 - **Phase 1** (Core + CLI): Complete
-- **Phase 2** (WebDAV sync): In progress — reworking to let users browse and pick a remote folder instead of hardcoding `Onyx/` subfolder
+- **Phase 2** (WebDAV sync): Complete — remote folder browsing, checksum-based conflict resolution, auto-sync lifecycle, per-workspace sync interval
 - **Phase 3** (GUI MVP): Complete
-- **Phase 4** (Mobile): Tauri Android cfg-gated, needs `tauri android init` + build
+- **Phase 4** (Mobile): Tauri Android cfg-gated with tauri-plugin-credentials and safe area insets; needs `tauri android init` + build
 
 ### GUI features done
 
@@ -87,21 +87,26 @@ Pre-alpha. No users, no released builds, no data to migrate. Breaking changes to
 - Group-by-due-date toggle per list (main panel kebab)
 - Delete completed tasks (main panel kebab + subtask kebab, with confirmation dialogs)
 - Keyboard shortcuts (Escape priority chain: settings → detail → list menu → drawer → menus)
-- Setup screen with 2-step mode selection (Local Folder vs WebDAV Server), window dragging, "Open Existing Folder" option
-- WebDAV setup flow with connection test, credential storage in system keychain
-- WebDAV sync: auto-creates `Onyx/` subfolder on remote, 60s hard timeout, sync error display in settings
+- Setup screen with 2-step mode selection (Local Folder vs WebDAV Server), window dragging, "Open Existing Folder" option, remote folder browsing
+- WebDAV setup flow with connection test, credential storage via tauri-plugin-credentials (Android Keystore + desktop keychain)
+- WebDAV sync: user-selected remote folder, 60s hard timeout, checksum-based conflict resolution (remote wins, local recovered as duplicate)
+- Auto-sync lifecycle: periodic polling (configurable interval), debounced file-change (5s), window-focus (30s stale threshold); sync status dot (idle/synced/error/offline) and manual sync button in drawer
+- Initial sync loading screen for new WebDAV workspaces
+- Per-workspace sync interval (configurable in settings)
+- Upload/download counts in drawer footer (hidden when zero)
+- Transient sync error suppression (connectivity issues update status dot only, no error banner)
 - File watcher (notify crate, 500ms debounce, auto-reloads on external changes)
-- Sync status indicators (last-sync time + upload/download counts chip)
-- Push/pull/full sync mode selection (session-only, in settings)
-- WorkspaceMode enum (local/webdav) with per-workspace config
+- WorkspaceMode enum (local/webdav) with per-workspace config, UUID-keyed workspaces
+- Workspace rename (local folder rename + WebDAV MOVE for remote folders, with confirmation dialog)
 - Desktop packaging (Linux: AppImage + .deb; Windows: MSI)
 - Tauri desktop-only deps (notify, keyring) feature-gated for Android compilation
+- Safe area insets for mobile (CSS variables --safe-top/--safe-bottom, viewport-fit=cover)
+- Task deduplication on load (handles sync conflict duplicates)
 - Subtask hierarchy: subtask count shown on parent tasks in list, subtask detail via three-panel slide navigation, inline add at top of subtask list (new subtasks prepend), collapsible completed subtasks section, cascade delete (parent deletion removes all subtasks with confirmation warning)
 - Custom confirmation dialogs (ConfirmDialog component replaces native confirm())
 
 ### GUI features NOT yet done
 
-- Workspace retarget/migrate
 - Search/filter tasks
 - Desktop packaging for macOS
 
