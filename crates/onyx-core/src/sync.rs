@@ -10,6 +10,7 @@ use crate::webdav::WebDavClient;
 
 /// File-based lock to prevent concurrent sync operations on the same workspace.
 /// The lock file is automatically removed on drop.
+#[derive(Debug)]
 struct SyncLock {
     path: PathBuf,
 }
@@ -1316,5 +1317,113 @@ mod tests {
         assert_eq!(path_parent("My Tasks/file.md"), Some("My Tasks"));
         assert_eq!(path_parent("file.md"), None);
         assert_eq!(path_parent("a/b/c.md"), Some("a/b"));
+    }
+
+    // --- validate_sync_path tests ---
+
+    #[test]
+    fn test_validate_sync_path_rejects_dotdot() {
+        assert!(validate_sync_path("../etc/passwd").is_err());
+        assert!(validate_sync_path("list/../secret.md").is_err());
+    }
+
+    #[test]
+    fn test_validate_sync_path_rejects_backslash() {
+        assert!(validate_sync_path("list\\..\\secret.md").is_err());
+        assert!(validate_sync_path("list\\file.md").is_err());
+        assert!(validate_sync_path("a\\b").is_err());
+    }
+
+    #[test]
+    fn test_validate_sync_path_allows_valid_paths() {
+        assert!(validate_sync_path("list/task.md").is_ok());
+        assert!(validate_sync_path(".onyx-workspace.json").is_ok());
+        assert!(validate_sync_path("My Tasks/.listdata.json").is_ok());
+    }
+
+    // --- SyncLock tests ---
+
+    #[test]
+    fn test_sync_lock_prevents_concurrent_access() {
+        let temp_dir = TempDir::new().unwrap();
+        let _lock1 = SyncLock::acquire(temp_dir.path()).unwrap();
+        let result = SyncLock::acquire(temp_dir.path());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("already in progress"));
+    }
+
+    #[test]
+    fn test_sync_lock_released_on_drop() {
+        let temp_dir = TempDir::new().unwrap();
+        {
+            let _lock = SyncLock::acquire(temp_dir.path()).unwrap();
+            // lock held here
+        }
+        // lock dropped — should be able to acquire again
+        let _lock2 = SyncLock::acquire(temp_dir.path()).unwrap();
+    }
+
+    #[test]
+    fn test_sync_lock_file_cleaned_up_on_drop() {
+        let temp_dir = TempDir::new().unwrap();
+        let lock_path = temp_dir.path().join(".sync.lock");
+        {
+            let _lock = SyncLock::acquire(temp_dir.path()).unwrap();
+            assert!(lock_path.exists(), "Lock file should exist while held");
+        }
+        assert!(!lock_path.exists(), "Lock file should be removed after drop");
+    }
+
+    // --- Sync state temp cleanup ---
+
+    #[test]
+    fn test_sync_state_save_load_no_leftover_tmp() {
+        let temp_dir = TempDir::new().unwrap();
+        let state = SyncState {
+            last_sync: Some(Utc::now()),
+            files: HashMap::new(),
+        };
+        state.save(temp_dir.path()).unwrap();
+
+        // Verify no .tmp files remain
+        let tmp_files: Vec<_> = std::fs::read_dir(temp_dir.path()).unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("tmp"))
+            .collect();
+        assert!(tmp_files.is_empty(), "No .tmp files should remain after save");
+    }
+
+    // --- Queue save no leftover tmp ---
+
+    #[test]
+    fn test_queue_save_no_leftover_tmp() {
+        let temp_dir = TempDir::new().unwrap();
+        let queue = OfflineQueue {
+            operations: vec![QueuedOperation {
+                action_type: "upload".to_string(),
+                path: "test.md".to_string(),
+                queued_at: Utc::now(),
+            }],
+        };
+        queue.save(temp_dir.path()).unwrap();
+
+        let tmp_files: Vec<_> = std::fs::read_dir(temp_dir.path()).unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("tmp"))
+            .collect();
+        assert!(tmp_files.is_empty(), "No .tmp files should remain after queue save");
+    }
+
+    // --- Frontmatter size limit in conflict parsing ---
+
+    #[test]
+    fn test_parse_frontmatter_for_conflict_rejects_oversized() {
+        // Create content with frontmatter larger than 64KB
+        let huge_field = "x".repeat(70_000);
+        let content = format!("---\nid: 550e8400-e29b-41d4-a716-446655440000\nstatus: backlog\nversion: 1\nhuge: {}\n---\n\nBody", huge_field);
+        let result = parse_frontmatter_for_conflict(&content);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("too large"), "Error should mention size: {}", err);
     }
 }

@@ -1032,12 +1032,149 @@ mod tests {
         let tasks = storage.list_tasks(list.id).unwrap();
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].id, task_id);
-        // The winner should be the one written by write_task (version 1), not the manually created stale copy (also version 1 but alphabetically second)
-        // Actually both are version 1, so the first sorted wins — but the stale file should be cleaned up
-        // Let's verify only one .md file remains
+        // Both are version 1, so mtime tiebreaker picks the most recent file.
+        // Verify only one .md file remains.
         let md_count = fs::read_dir(&list_dir).unwrap()
             .filter(|e| e.as_ref().unwrap().path().extension().and_then(|s| s.to_str()) == Some("md"))
             .count();
         assert_eq!(md_count, 1);
+    }
+
+    // --- Deduplication mtime tiebreaker ---
+
+    #[test]
+    fn test_dedup_equal_versions_uses_mtime_tiebreaker() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut storage = init_storage(&temp_dir);
+        let list = storage.create_list("Dedup2".to_string()).unwrap();
+
+        let task_id = uuid::Uuid::new_v4();
+        let list_dir = storage.list_dir_path(list.id).unwrap();
+
+        // Create two files with the same UUID and same version (1)
+        let content_a = format!(
+            "---\nid: {}\nstatus: backlog\nversion: 1\n---\n\nVersion A (older)",
+            task_id
+        );
+        let content_b = format!(
+            "---\nid: {}\nstatus: backlog\nversion: 1\n---\n\nVersion B (newer)",
+            task_id
+        );
+
+        let path_a = list_dir.join("TaskA.md");
+        let path_b = list_dir.join("TaskB.md");
+        fs::write(&path_a, &content_a).unwrap();
+        // Sleep briefly so mtime differs
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        fs::write(&path_b, &content_b).unwrap();
+
+        let tasks = storage.list_tasks(list.id).unwrap();
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].id, task_id);
+        // The newer file (B) should win the mtime tiebreaker
+        assert_eq!(tasks[0].description, "Version B (newer)");
+
+        // Verify only one .md file remains
+        let md_count = fs::read_dir(&list_dir).unwrap()
+            .filter(|e| e.as_ref().unwrap().path().extension().and_then(|s| s.to_str()) == Some("md"))
+            .count();
+        assert_eq!(md_count, 1);
+    }
+
+    // --- Frontmatter size limit ---
+
+    #[test]
+    fn test_parse_frontmatter_rejects_oversized() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = init_storage(&temp_dir);
+
+        // Create content with frontmatter larger than 64KB
+        let huge = "x".repeat(70_000);
+        let content = format!(
+            "---\nid: 550e8400-e29b-41d4-a716-446655440000\nstatus: backlog\nversion: 1\nhuge: {}\n---\n\nBody",
+            huge
+        );
+        let result = storage.parse_markdown_with_frontmatter(&content);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("too large"), "Error should mention size: {}", err);
+    }
+
+    #[test]
+    fn test_parse_frontmatter_accepts_normal_size() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = init_storage(&temp_dir);
+
+        let content = "---\nid: 550e8400-e29b-41d4-a716-446655440000\nstatus: backlog\nversion: 1\n---\n\nDescription";
+        let result = storage.parse_markdown_with_frontmatter(content);
+        assert!(result.is_ok());
+    }
+
+    // --- Version saturating_add ---
+
+    #[test]
+    fn test_version_saturates_at_max() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut storage = init_storage(&temp_dir);
+        let list = storage.create_list("MaxVer".to_string()).unwrap();
+
+        let mut task = Task::new("Saturate".to_string());
+        task.version = u64::MAX - 1;
+
+        storage.write_task(list.id, &task).unwrap();
+        let read_back = storage.read_task(list.id, task.id).unwrap();
+        assert_eq!(read_back.version, u64::MAX, "Version should saturate at u64::MAX");
+
+        // Writing again should not panic or wrap
+        storage.write_task(list.id, &read_back).unwrap();
+        let read_again = storage.read_task(list.id, task.id).unwrap();
+        assert_eq!(read_again.version, u64::MAX, "Version should stay at u64::MAX");
+    }
+
+    // --- Delete ordering: metadata before file ---
+
+    #[test]
+    fn test_delete_task_removes_from_metadata_first() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut storage = init_storage(&temp_dir);
+        let list = storage.create_list("DelOrder".to_string()).unwrap();
+
+        let task = Task::new("ToDelete".to_string());
+        let task_id = task.id;
+        storage.write_task(list.id, &task).unwrap();
+
+        // Verify task is in metadata
+        let meta = storage.read_list_metadata(list.id).unwrap();
+        assert!(meta.task_order.contains(&task_id));
+
+        // Delete
+        storage.delete_task(list.id, task_id).unwrap();
+
+        // Verify metadata no longer contains the task
+        let meta_after = storage.read_list_metadata(list.id).unwrap();
+        assert!(!meta_after.task_order.contains(&task_id));
+
+        // Verify file is also gone
+        let list_dir = storage.list_dir_path(list.id).unwrap();
+        let md_count = fs::read_dir(&list_dir).unwrap()
+            .filter(|e| e.as_ref().unwrap().path().extension().and_then(|s| s.to_str()) == Some("md"))
+            .count();
+        assert_eq!(md_count, 0);
+    }
+
+    // --- Atomic write no leftover tmp ---
+
+    #[test]
+    fn test_atomic_write_no_leftover_tmp() {
+        let temp_dir = TempDir::new().unwrap();
+        let target = temp_dir.path().join("test.json");
+        atomic_write(&target, b"hello").unwrap();
+
+        let tmp_files: Vec<_> = fs::read_dir(temp_dir.path()).unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("tmp"))
+            .collect();
+        assert!(tmp_files.is_empty(), "No .tmp files should remain after atomic_write");
+        assert_eq!(fs::read_to_string(&target).unwrap(), "hello");
     }
 }
