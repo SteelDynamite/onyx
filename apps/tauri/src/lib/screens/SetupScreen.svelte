@@ -262,12 +262,11 @@
     {/if}
   </header>
 
-  <div class="flex flex-1 items-center justify-center p-6">
+  <div class="flex flex-1 flex-col items-center justify-center p-6">
+    <h1 class="-mt-8 mb-6 text-6xl font-bold">Onyx</h1>
     <div
       class="w-full max-w-sm rounded-2xl bg-card-light p-8 shadow-lg dark:bg-card-dark"
     >
-      <h1 class="mb-1 text-2xl font-bold">Onyx</h1>
-
       {#if mode === null}
         <!-- Step 1: Choose mode -->
         <p class="mb-6 text-sm text-text-secondary-light dark:text-text-secondary-dark">
