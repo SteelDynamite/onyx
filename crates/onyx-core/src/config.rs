@@ -33,11 +33,13 @@ pub struct WorkspaceConfig {
     pub theme: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub sync_interval_secs: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub sync_interval_unfocused_secs: Option<u64>,
 }
 
 impl WorkspaceConfig {
     pub fn new(name: String, path: PathBuf) -> Self {
-        Self { name, path, mode: WorkspaceMode::Local, webdav_url: None, webdav_path: None, last_sync: None, theme: None, sync_interval_secs: None }
+        Self { name, path, mode: WorkspaceMode::Local, webdav_url: None, webdav_path: None, last_sync: None, theme: None, sync_interval_secs: None, sync_interval_unfocused_secs: None }
     }
 }
 

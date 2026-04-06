@@ -556,6 +556,19 @@ fn set_sync_interval(
     s.save_config()
 }
 
+#[tauri::command]
+fn set_sync_interval_unfocused(
+    workspace_id: String,
+    interval_secs: Option<u64>,
+    state: State<'_, Mutex<AppState>>,
+) -> Result<(), String> {
+    let mut s = lock_state(&state)?;
+    if let Some(ws) = s.config.workspaces.get_mut(&workspace_id) {
+        ws.sync_interval_unfocused_secs = interval_secs;
+    }
+    s.save_config()
+}
+
 /// A remote folder entry returned to the frontend.
 #[derive(Debug, Serialize, Deserialize)]
 struct RemoteFolderEntry {
@@ -792,6 +805,8 @@ async fn sync_workspace(
 
     {
         let mut s = lock_state(&state)?;
+        // Suppress file watcher events from sync-written files (500ms debounce + margin)
+        mute_watcher(&mut s);
         if let Some(ws) = s.config.workspaces.get_mut(&workspace_id) {
             ws.last_sync = Some(Utc::now());
         }
@@ -914,6 +929,7 @@ pub fn run() {
             set_webdav_config,
             set_workspace_theme,
             set_sync_interval,
+            set_sync_interval_unfocused,
             add_webdav_workspace,
             list_remote_folder,
             inspect_remote_workspace,
