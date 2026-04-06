@@ -221,6 +221,7 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="flex h-full flex-col" onmousedown={handleDrag}>
+  <div class="shrink-0" style="height: var(--safe-top)"></div>
   <!-- Title bar area with window controls -->
   <header class="flex h-11 shrink-0 items-center justify-between px-2">
     <div>

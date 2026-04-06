@@ -19,18 +19,27 @@
       class="relative h-full w-full overflow-hidden bg-surface-light text-text-light dark:bg-surface-dark dark:text-text-dark"
       class:rounded-xl={isLinux}
       class:linux-window-border={isLinux}
-      style="container-type: inline-size{isMobile ? '; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom)' : ''}"
+      style="container-type: inline-size"
     >
       {#if app.error}
         <div
           class="absolute top-0 left-0 right-0 z-50 flex items-center justify-between bg-danger px-4 py-2 text-sm text-white"
+          style="top: env(safe-area-inset-top)"
         >
           <span>{app.error}</span>
           <button onclick={() => app.clearError()} class="ml-2 font-bold">✕</button>
         </div>
       {/if}
 
-      {#if app.screen === "missing"}
+      {#if app.initialSync}
+        <div class="flex h-full flex-col items-center justify-center gap-4">
+          <svg class="h-8 w-8 animate-spin text-primary" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" opacity="0.25" />
+            <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
+          </svg>
+          <p class="text-sm text-text-secondary-light dark:text-text-secondary-dark">Syncing workspace&hellip;</p>
+        </div>
+      {:else if app.screen === "missing"}
         <div class="flex h-full items-center justify-center p-6">
           <div class="w-full max-w-sm rounded-2xl bg-card-light p-8 shadow-lg dark:bg-card-dark">
             <h1 class="mb-1 text-2xl font-bold">Workspace Not Found</h1>

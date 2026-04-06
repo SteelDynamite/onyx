@@ -215,6 +215,7 @@
 >
   <!-- Drawer panel -->
   <div class="flex h-full shrink-0 flex-col bg-surface-light dark:bg-surface-dark" style="width: 80cqi">
+    <div class="shrink-0" style="height: var(--safe-top)"></div>
     <!-- Drawer header: workspace switcher + settings -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
@@ -327,7 +328,7 @@
     </div>
 
     <!-- Drawer footer: sync status -->
-    <div class="shrink-0 px-4 py-2.5">
+    <div class="shrink-0 px-4 py-2.5" style="padding-bottom: max(0.625rem, var(--safe-bottom))">
       {#if app.isWebdav}
         <div class="flex items-center gap-2">
           <!-- Status dot -->
@@ -374,6 +375,7 @@
     >
       <!-- Sub-panel: Task list -->
       <div class="relative flex h-full w-1/3 flex-col">
+        <div class="shrink-0" style="height: var(--safe-top)"></div>
         <!-- Header / drag region -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <header
@@ -495,6 +497,7 @@
 
         <!-- Task list -->
         <main class="flex-1 overflow-y-auto">
+          {#key app.activeListId}
           {#if app.lists.length === 0}
             <div class="flex h-full flex-col items-center justify-center p-8 text-center">
               <p class="text-lg font-medium opacity-60">No lists yet</p>
@@ -558,11 +561,13 @@
               {/if}
             {/if}
           {/if}
+          {/key}
         </main>
 
         <!-- FAB button -->
         <div
-          class="pointer-events-none absolute bottom-6 left-0 right-0 z-20 flex justify-center transition-all duration-250 ease-out {newTaskState.open ? 'opacity-0 scale-75' : ''} {showDrawer || taskStack.length > 0 ? 'translate-y-24 opacity-0' : 'translate-y-0 opacity-100'}"
+          class="pointer-events-none absolute left-0 right-0 z-20 flex justify-center transition-all duration-250 ease-out {newTaskState.open ? 'opacity-0 scale-75' : ''} {showDrawer || taskStack.length > 0 ? 'translate-y-24 opacity-0' : 'translate-y-0 opacity-100'}"
+          style="bottom: max(1.5rem, var(--safe-bottom))"
         >
           <button
             onclick={() => { if (app.activeListId) newTaskState.open = true; }}
@@ -578,6 +583,7 @@
 
       <!-- Sub-panel: Task detail -->
       <div class="relative flex h-full w-1/3 flex-col bg-surface-light dark:bg-surface-dark">
+        <div class="shrink-0" style="height: var(--safe-top)"></div>
         {#if parentTask}
           {#key parentTask.id}
             <TaskDetailView task={parentTask} onback={closeDetail} onopen={pushTask} />
@@ -587,6 +593,7 @@
 
       <!-- Sub-panel: Subtask detail -->
       <div class="relative flex h-full w-1/3 flex-col bg-surface-light dark:bg-surface-dark">
+        <div class="shrink-0" style="height: var(--safe-top)"></div>
         {#if subtaskDetail}
           {#key subtaskDetail.id}
             <TaskDetailView task={subtaskDetail} onback={closeDetail} />
@@ -603,7 +610,7 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="absolute inset-0 z-50 flex transition-opacity duration-200 {showSettings ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}"
-  style="padding: 4%"
+  style="padding: 4%; padding-top: max(4%, env(safe-area-inset-top)); padding-bottom: max(4%, env(safe-area-inset-bottom))"
 >
   <!-- Backdrop -->
   <div
