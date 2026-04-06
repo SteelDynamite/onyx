@@ -49,7 +49,7 @@ Workspaces are plain folders. Each task list is a subfolder containing `.listdat
 
 The GUI uses Svelte 5 runes mode (`$state`, `$derived`, `$effect`, `$props()`). Key UI patterns:
 
-- **Sliding drawer**: Left panel (lists) slides with main content as one piece via `translateX`. 80vw wide. List items show checkmark for active list and chevron on hover.
+- **Sliding drawer**: Left panel (lists) slides with main content as one piece via `translateX`. 80cqi wide (80% container query inline size). List items show checkmark for active list and chevron on hover.
 - **Three-panel slide**: Main content area is 300% wide with three panels (task list, task detail, subtask detail) that slide via `translateX` using a `taskStack` array. Stack depth 0 = list, 1 = task detail, 2 = subtask detail.
 - **Settings modal**: Per-workspace settings opened from workspace kebab menu. Shows WebDAV config (for webdav workspaces), sync controls, and theme selector.
 - **Workspace switcher**: Custom drop-up menu in drawer footer (left), kebab menu per workspace (right) with Settings option.
@@ -68,7 +68,7 @@ Pre-alpha. No users, no released builds, no data to migrate. Breaking changes to
 - **Phase 1** (Core + CLI): Complete
 - **Phase 2** (WebDAV sync): Complete — remote folder browsing, checksum-based conflict resolution, auto-sync lifecycle, per-workspace sync interval
 - **Phase 3** (GUI MVP): Complete
-- **Phase 4** (Mobile): Tauri Android cfg-gated with tauri-plugin-credentials and safe area insets; needs `tauri android init` + build
+- **Phase 4** (Mobile): In progress — Android preliminaries done (file-watcher gating, tauri-plugin-credentials, safe area insets, Android targets configured); needs build verification and iOS setup
 
 ### GUI features done
 
@@ -84,7 +84,7 @@ Pre-alpha. No users, no released builds, no data to migrate. Breaking changes to
 - Due date picker/editor (DateTimePicker in new task + task detail); `has_time: bool` field tracks whether time is set
 - Move task between lists (inline list in kebab menu, no submenu)
 - List rename (inline input in main panel header via kebab)
-- Group-by-due-date toggle per list (main panel kebab)
+- Group-by-due-date toggle per list (main panel kebab; persists flag but display sorting not yet implemented)
 - Delete completed tasks (main panel kebab + subtask kebab, with confirmation dialogs)
 - Keyboard shortcuts (Escape priority chain: settings → detail → list menu → drawer → menus)
 - Setup screen with 2-step mode selection (Local Folder vs WebDAV Server), window dragging, "Open Existing Folder" option, remote folder browsing

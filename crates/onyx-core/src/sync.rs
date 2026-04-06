@@ -135,10 +135,10 @@ pub struct RemoteFileSnapshot {
 /// | unchanged     | modified       | download                                    |
 /// | deleted       | unchanged      | delete remote                               |
 /// | unchanged     | deleted        | delete local                                |
-/// | modified      | modified       | last-write-wins (compare timestamps)        |
+/// | modified      | modified       | conflict (remote wins; local recovered)     |
 /// | deleted       | modified       | download (remote wins)                      |
 /// | modified      | deleted        | upload (local wins)                         |
-/// | added         | added          | last-write-wins                             |
+/// | added         | added          | conflict (remote wins; local recovered)     |
 pub fn compute_sync_actions(
     local_files: &[LocalFileInfo],
     remote_files: &[RemoteFileSnapshot],
