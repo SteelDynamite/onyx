@@ -183,5 +183,6 @@
         <button onclick={clear} class="text-sm text-danger hover:opacity-70">Clear date</button>
       </div>
     {/if}
+    <div style="height: max(0.75rem, var(--safe-bottom))"></div>
   </div>
 </div>
