@@ -166,8 +166,9 @@ body {
   color: #d1bf82;
 }
 
-/* Dark text on primary buttons/FAB */
-[data-theme="onyx"] .bg-primary {
+/* Dark text/icons on primary buttons/FAB */
+[data-theme="onyx"] .bg-primary,
+[data-theme="onyx"] .bg-primary .text-white {
   color: #141414;
 }
 
