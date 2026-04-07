@@ -14,7 +14,7 @@
 </script>
 
 <div class={app.isDark ? "dark" : ""} data-theme={app.currentTheme ?? ""}>
-  <div class="h-screen w-screen" class:p-2={isLinux}>
+  <div class="h-screen w-screen" class:p-2={isLinux} class:onyx-border={app.currentTheme === "onyx"}>
     <div
       class="relative h-full w-full overflow-hidden bg-surface-light text-text-light dark:bg-surface-dark dark:text-text-dark"
       class:rounded-xl={isLinux}

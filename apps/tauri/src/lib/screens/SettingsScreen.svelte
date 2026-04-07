@@ -259,7 +259,7 @@
       <option value="nord">Nord</option>
       <option value="dracula">Dracula</option>
       <option value="solarized">Solarized Dark</option>
-      <option value="onyx">Onyx</option>
+      <option value="onyx">Black and Gold</option>
     </select>
   </section>
 
