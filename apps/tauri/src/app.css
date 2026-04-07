@@ -139,6 +139,33 @@ body {
   --color-danger: #ff5555;
 }
 
+[data-theme="onyx"] {
+  --color-primary: #ffffff;
+  --color-primary-hover: #e0e0e0;
+  --color-surface-light: #0a0a0a;
+  --color-surface-dark: #0a0a0a;
+  --color-card-light: #161616;
+  --color-card-dark: #161616;
+  --color-text-light: #c4a95a;
+  --color-text-dark: #c4a95a;
+  --color-text-secondary-light: #917a3e;
+  --color-text-secondary-dark: #917a3e;
+  --color-border-light: #2a2418;
+  --color-border-dark: #2a2418;
+  --color-danger: #ef4444;
+}
+
+[data-theme="onyx"] * {
+  scrollbar-color: #917a3e transparent;
+}
+[data-theme="onyx"] ::-webkit-scrollbar-thumb {
+  background: #917a3e;
+}
+[data-theme="onyx"] select option {
+  background-color: #0a0a0a;
+  color: #c4a95a;
+}
+
 [data-theme="solarized"] {
   --color-primary: #268bd2;
   --color-primary-hover: #1e7ac0;

@@ -688,7 +688,18 @@ async fn execute_action(
     match action {
         SyncAction::Upload { path } => {
             let local_path = workspace_path.join(path.replace('/', std::path::MAIN_SEPARATOR_STR));
-            let data = std::fs::read(&local_path)?;
+            let data = match std::fs::read(&local_path) {
+                Ok(d) => d,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    // File was moved or deleted since the action was computed (e.g. task
+                    // moved between lists).  Drop the stale upload and clean up sync state
+                    // so the next cycle can re-evaluate from a clean baseline.
+                    report(&format!("  - Skipping upload for missing file {}", path));
+                    sync_state.files.remove(path.as_str());
+                    return Ok(());
+                }
+                Err(e) => return Err(e.into()),
+            };
             let checksum = compute_checksum(&data);
 
             if let Some(parent) = path_parent(path) {
@@ -707,7 +718,16 @@ async fn execute_action(
 
         SyncAction::Conflict { path } => {
             let local_path = workspace_path.join(path.replace('/', std::path::MAIN_SEPARATOR_STR));
-            let local_data = std::fs::read(&local_path)?;
+            let local_data = match std::fs::read(&local_path) {
+                Ok(d) => d,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    // Local file gone — treat as remote-wins: download it on next cycle.
+                    report(&format!("  - Skipping conflict for missing local file {}", path));
+                    sync_state.files.remove(path.as_str());
+                    return Ok(());
+                }
+                Err(e) => return Err(e.into()),
+            };
             let local_checksum = compute_checksum(&local_data);
 
             let remote_data = client.get_file(path).await?;
