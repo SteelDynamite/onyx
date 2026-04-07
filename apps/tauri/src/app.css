@@ -140,12 +140,12 @@ body {
 }
 
 [data-theme="onyx"] {
-  --color-primary: #ffffff;
-  --color-primary-hover: #e0e0e0;
-  --color-surface-light: #0a0a0a;
-  --color-surface-dark: #0a0a0a;
-  --color-card-light: #161616;
-  --color-card-dark: #161616;
+  --color-primary: #f5ecd0;
+  --color-primary-hover: #e0d5b3;
+  --color-surface-light: #141414;
+  --color-surface-dark: #141414;
+  --color-card-light: #1e1e1e;
+  --color-card-dark: #1e1e1e;
   --color-text-light: #c4a95a;
   --color-text-dark: #c4a95a;
   --color-text-secondary-light: #917a3e;
@@ -162,8 +162,31 @@ body {
   background: #917a3e;
 }
 [data-theme="onyx"] select option {
-  background-color: #0a0a0a;
+  background-color: #141414;
   color: #c4a95a;
+}
+
+/* Dark text on primary buttons/FAB */
+[data-theme="onyx"] .bg-primary {
+  color: #141414;
+}
+
+/* Checkbox borders: gold instead of gray */
+[data-theme="onyx"] .border-gray-400,
+[data-theme="onyx"] .border-gray-500 {
+  border-color: #917a3e;
+}
+
+/* Hover/focus highlights: gold tint instead of white */
+[data-theme="onyx"] .dark\:hover\:bg-white\/10:hover,
+[data-theme="onyx"] .dark\:hover\:bg-white\/5:hover,
+[data-theme="onyx"] .dark\:bg-white\/10 {
+  background-color: rgb(196 169 90 / 0.1);
+}
+
+/* Linux window border */
+[data-theme="onyx"] .linux-window-border {
+  border-color: rgba(196, 169, 90, 0.15);
 }
 
 [data-theme="solarized"] {
