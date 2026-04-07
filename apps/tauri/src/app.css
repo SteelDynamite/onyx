@@ -171,6 +171,11 @@ body {
   color: #141414;
 }
 
+/* FAB: match text gold instead of cream primary */
+[data-theme="onyx"] .rounded-full.bg-primary.shadow-lg {
+  background-color: #d4bc72;
+}
+
 /* Checkbox borders: gold instead of gray */
 [data-theme="onyx"] .border-gray-400,
 [data-theme="onyx"] .border-gray-500 {
