@@ -67,7 +67,7 @@ let hasWorkspace = $derived(
     Object.keys(config.workspaces).length > 0,
 );
 
-const DARK_THEMES = new Set(["dark", "nord", "dracula", "solarized"]);
+const DARK_THEMES = new Set(["dark", "nord", "dracula", "solarized", "onyx"]);
 let currentTheme = $derived(
   config?.current_workspace
     ? config.workspaces[config.current_workspace]?.theme ?? null
