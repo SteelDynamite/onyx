@@ -3,7 +3,7 @@ export interface Task {
   title: string;
   description: string;
   status: "backlog" | "completed";
-  due_date: string | null;
+  date: string | null;
   has_time: boolean;
   version: number;
   parent_id: string | null;
@@ -15,7 +15,7 @@ export interface TaskList {
   tasks: Task[];
   created_at: string;
   updated_at: string;
-  group_by_due_date: boolean;
+  group_by_date: boolean;
 }
 
 export type WorkspaceMode = "local" | "webdav";

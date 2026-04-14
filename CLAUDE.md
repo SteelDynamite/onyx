@@ -56,7 +56,7 @@ The GUI uses Svelte 5 runes mode (`$state`, `$derived`, `$effect`, `$props()`). 
 - **Task animations**: Grid-rows `0fr`/`1fr` trick for smooth collapse/expand. Module-level `animateInIds` Set coordinates expand-in after toggle.
 - **Inline editing**: Click task to edit, auto-save on blur. `debouncedSave` snapshots task before timer to prevent stale-reference errors on component destroy.
 - **Kebab menus**: Tasks and lists use kebab menus with custom `ConfirmDialog` component (not native `confirm()`). "Move to..." is inline in the menu (not a submenu) to avoid overflow.
-- **Main panel header**: Hamburger + window controls in top bar; list name (large, bold) + kebab below divider (matching task detail layout). Kebab has Rename, Group by due date, Delete completed, Delete list.
+- **Main panel header**: Hamburger + window controls in top bar; list name (large, bold) + kebab below divider (matching task detail layout). Kebab has Rename, Group by date, Delete completed, Delete list.
 - **New task**: FAB button opens bottom toast sheet (outside sliding container for fixed positioning).
 
 ### Development phase
@@ -81,10 +81,10 @@ Pre-alpha. No users, no released builds, no data to migrate. Breaking changes to
 - Workspace switcher drop-up with add/remove
 - Per-workspace theme system (System default, Light, Dark, Nord, Dracula, Solarized Dark) via CSS `data-theme` attribute
 - Completed tasks section with animated show/hide
-- Due date picker/editor (DateTimePicker in new task + task detail); `has_time: bool` field tracks whether time is set
+- Date picker/editor (DateTimePicker in new task + task detail); `has_time: bool` field tracks whether time is set
 - Move task between lists (inline list in kebab menu, no submenu)
 - List rename (inline input in main panel header via kebab)
-- Group-by-due-date toggle per list (main panel kebab; persists flag but display sorting not yet implemented)
+- Group-by-date toggle per list (main panel kebab; persists flag but display sorting not yet implemented)
 - Delete completed tasks (main panel kebab + subtask kebab, with confirmation dialogs)
 - Keyboard shortcuts (Escape priority chain: settings → detail → list menu → drawer → menus)
 - Setup screen with 2-step mode selection (Local Folder vs WebDAV Server), window dragging, "Open Existing Folder" option, remote folder browsing

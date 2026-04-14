@@ -55,7 +55,7 @@ let completedTasks = $derived(tasks.filter((t) => t.status === "completed" && !t
 type TaskGroup = { label: string; tasks: Task[]; date: Date | null };
 
 let groupedPendingTasks = $derived.by((): TaskGroup[] | null => {
-  if (!activeList?.group_by_due_date) return null;
+  if (!activeList?.group_by_date) return null;
   const now = new Date();
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const tomorrowStart = new Date(todayStart);
@@ -68,10 +68,10 @@ let groupedPendingTasks = $derived.by((): TaskGroup[] | null => {
   const noDate: Task[] = [];
 
   for (const task of pendingTasks) {
-    if (!task.due_date) {
+    if (!task.date) {
       noDate.push(task);
     } else {
-      const d = new Date(task.due_date);
+      const d = new Date(task.date);
       const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate());
       if (dayStart < todayStart) overdue.push(task);
       else if (dayStart.getTime() === todayStart.getTime()) today.push(task);
@@ -86,7 +86,7 @@ let groupedPendingTasks = $derived.by((): TaskGroup[] | null => {
 
   const taskOrderIndex = new Map(pendingTasks.map((t, i) => [t.id, i]));
   const sortByDue = (a: Task, b: Task) => {
-    const dateDiff = new Date(a.due_date!).getTime() - new Date(b.due_date!).getTime();
+    const dateDiff = new Date(a.date!).getTime() - new Date(b.date!).getTime();
     if (dateDiff !== 0) return dateDiff;
     return (taskOrderIndex.get(a.id) ?? 0) - (taskOrderIndex.get(b.id) ?? 0);
   };
@@ -395,11 +395,11 @@ async function renameList(listId: string, newName: string) {
   }
 }
 
-async function setGroupByDueDate(listId: string, enabled: boolean) {
+async function setGroupByDate(listId: string, enabled: boolean) {
   try {
-    await invoke("set_group_by_due_date", { listId, enabled });
+    await invoke("set_group_by_date", { listId, enabled });
     lists = lists.map((l) =>
-      l.id === listId ? { ...l, group_by_due_date: enabled } : l,
+      l.id === listId ? { ...l, group_by_date: enabled } : l,
     );
     if (listId === activeListId) await loadTasks();
   } catch (e) {
@@ -656,7 +656,7 @@ export const app = {
   deleteTask,
   moveTask,
   renameList,
-  setGroupByDueDate,
+  setGroupByDate,
   triggerSync,
   startAutoSync,
   stopAutoSync,

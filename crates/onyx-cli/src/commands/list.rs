@@ -11,7 +11,7 @@ fn print_tasks(tasks: &[Task]) {
     }
     for task in tasks {
         let checkbox = if task.status == TaskStatus::Completed { "[✓]".green() } else { "[ ]".normal() };
-        let due_str = task.due_date.map(|d| format!(" (due: {})", d.format("%Y-%m-%d")).yellow().to_string()).unwrap_or_default();
+        let due_str = task.date.map(|d| format!(" ({})", d.format("%Y-%m-%d")).yellow().to_string()).unwrap_or_default();
         output::item(&format!("{} {}{} {}", checkbox, task.title, due_str, task.id.to_string().dimmed()));
     }
 }

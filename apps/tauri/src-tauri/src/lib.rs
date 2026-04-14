@@ -488,7 +488,7 @@ fn rename_list(
 }
 
 #[tauri::command]
-fn set_group_by_due_date(
+fn set_group_by_date(
     list_id: String,
     enabled: bool,
     state: State<'_, Mutex<AppState>>,
@@ -498,12 +498,12 @@ fn set_group_by_due_date(
     mute_watcher(&mut s);
     let id = Uuid::parse_str(&list_id).map_err(|e| e.to_string())?;
     repo_mut(&mut s)?
-        .set_group_by_due_date(id, enabled)
+        .set_group_by_date(id, enabled)
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn get_group_by_due_date(
+fn get_group_by_date(
     list_id: String,
     state: State<'_, Mutex<AppState>>,
 ) -> Result<bool, String> {
@@ -511,7 +511,7 @@ fn get_group_by_due_date(
     ensure_repo(&mut s)?;
     let id = Uuid::parse_str(&list_id).map_err(|e| e.to_string())?;
     repo_ref(&s)?
-        .get_group_by_due_date(id)
+        .get_group_by_date(id)
         .map_err(|e| e.to_string())
 }
 
@@ -924,8 +924,8 @@ pub fn run() {
             reorder_task,
             move_task,
             rename_list,
-            set_group_by_due_date,
-            get_group_by_due_date,
+            set_group_by_date,
+            get_group_by_date,
             set_webdav_config,
             set_workspace_theme,
             set_sync_interval,

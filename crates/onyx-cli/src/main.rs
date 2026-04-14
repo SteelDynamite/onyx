@@ -39,9 +39,9 @@ enum Commands {
         /// List to add task to
         #[arg(short, long)]
         list: Option<String>,
-        /// Due date (ISO 8601 format: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)
+        /// Date (ISO 8601 format: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)
         #[arg(short, long)]
-        due: Option<String>,
+        date: Option<String>,
         /// Workspace to use
         #[arg(short, long)]
         workspace: Option<String>,
@@ -74,7 +74,7 @@ enum Commands {
         workspace: Option<String>,
     },
 
-    /// Toggle group-by-due-date for a list
+    /// Toggle group-by-date for a list
     #[command(subcommand)]
     Group(GroupCommands),
 
@@ -176,7 +176,7 @@ enum ListCommands {
 
 #[derive(Subcommand)]
 enum GroupCommands {
-    /// Enable group-by-due-date for a list
+    /// Enable group-by-date for a list
     Enable {
         /// Name of the list
         #[arg(short, long)]
@@ -186,7 +186,7 @@ enum GroupCommands {
         workspace: Option<String>,
     },
 
-    /// Disable group-by-due-date for a list
+    /// Disable group-by-date for a list
     Disable {
         /// Name of the list
         #[arg(short, long)]
@@ -235,8 +235,8 @@ fn main() -> Result<()> {
                 list::delete(name, workspace)?;
             }
         },
-        Commands::Add { title, list, due, workspace } => {
-            task::add(title, list, due, workspace)?;
+        Commands::Add { title, list, date, workspace } => {
+            task::add(title, list, date, workspace)?;
         }
         Commands::Complete { task_id, workspace } => {
             task::complete(task_id, workspace)?;
