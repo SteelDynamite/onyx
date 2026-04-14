@@ -260,6 +260,7 @@
       <option value="dracula">Dracula</option>
       <option value="solarized">Solarized Dark</option>
       <option value="onyx">Black and Gold</option>
+      <option value="ink">Ink</option>
     </select>
   </section>
 
