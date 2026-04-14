@@ -161,7 +161,7 @@
           </span>
         {/if}
       {/if}
-      {#if subtaskCount > 0}
+      {#if subtaskCount > 0 && showSubtaskCount}
         <span class="mt-1 inline-flex items-center gap-1 text-xs opacity-40" aria-label="{subtasks.filter(s => s.status === 'completed').length} of {subtaskCount} subtasks completed">
           <svg class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
             <path fill-rule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm2 4a1 1 0 011-1h10a1 1 0 110 2H6a1 1 0 01-1-1zm2 4a1 1 0 011-1h8a1 1 0 110 2H8a1 1 0 01-1-1z" />

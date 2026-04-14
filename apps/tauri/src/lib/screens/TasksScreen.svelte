@@ -46,14 +46,6 @@
   let settingsWorkspace = $state<string | null>(null);
   let showNewList = $state(false);
   let showWorkspacePicker = $state(false);
-  let workspacePickerEl = $state<HTMLDivElement | null>(null);
-
-  function handleWindowClick(e: MouseEvent) {
-    if (showWorkspacePicker && workspacePickerEl && !workspacePickerEl.contains(e.target as Node))
-      showWorkspacePicker = false;
-    if (showListMenu && listMenuEl && !listMenuEl.contains(e.target as Node))
-      showListMenu = false;
-  }
 
   let newListName = $state("");
   let showCompleted = $state(false);
@@ -61,7 +53,6 @@
   let renamingListId = $state<string | null>(null);
   let renameValue = $state("");
   let showListMenu = $state(false);
-  let listMenuEl = $state<HTMLDivElement | null>(null);
   let showSubtasks = $state(false);
   let confirmDeleteList = $state(false);
   let confirmDeleteCompleted = $state(false);
@@ -73,18 +64,15 @@
   let resizeTimer: ReturnType<typeof setTimeout>;
 
   $effect(() => {
-    window.addEventListener("mousedown", handleWindowClick);
     const handleResize = () => {
       resizing = true;
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => (resizing = false), 150);
     };
     window.addEventListener("resize", handleResize);
-    return () => {
-      window.removeEventListener("mousedown", handleWindowClick);
-      window.removeEventListener("resize", handleResize);
-    };
+    return () => window.removeEventListener("resize", handleResize);
   });
+
 
   async function handleNewList() {
     if (!newListName.trim()) return;
@@ -295,7 +283,11 @@
   style="width: calc(100cqi + 80cqi); transform: translateX({translateX})"
 >
   <!-- Drawer panel -->
-  <div class="flex h-full shrink-0 flex-col bg-surface-light dark:bg-surface-dark" style="width: 80cqi">
+  <div class="relative flex h-full shrink-0 flex-col bg-surface-light dark:bg-surface-dark" style="width: 80cqi">
+    {#if showWorkspacePicker}
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="absolute inset-0 z-[39]" onclick={() => (showWorkspacePicker = false)}></div>
+    {/if}
     <div class="shrink-0" style="height: var(--safe-top)"></div>
     <!-- Drawer header: workspace switcher + settings -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -303,7 +295,7 @@
       onmousedown={handleHeaderMouseDown}
       class="flex h-11 shrink-0 items-center justify-between border-b border-border-light px-3 dark:border-border-dark"
     >
-      <div class="relative min-w-0 flex-1" bind:this={workspacePickerEl}>
+      <div class="relative min-w-0 flex-1">
         <button
           onclick={() => (showWorkspacePicker = !showWorkspacePicker)}
           class="flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm font-semibold hover:bg-black/5 dark:hover:bg-white/10"
@@ -468,6 +460,10 @@
     >
       <!-- Sub-panel: Task list -->
       <div class="relative flex h-full w-1/3 flex-col">
+        {#if showListMenu}
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div class="absolute inset-0 z-[39]" onclick={() => (showListMenu = false)}></div>
+        {/if}
         <div class="shrink-0" style="height: var(--safe-top)"></div>
         <!-- Header / drag region -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -516,7 +512,7 @@
         <div class="relative px-4 pt-3 pb-2">
           {#if app.activeListId}
             <!-- Kebab menu -->
-            <div class="absolute right-3 top-1" bind:this={listMenuEl}>
+            <div class="absolute right-3 top-1">
               <button
                 onclick={() => (showListMenu = !showListMenu)}
                 class="rounded-lg p-1.5 opacity-50 hover:bg-black/5 hover:opacity-80 dark:hover:bg-white/10"
