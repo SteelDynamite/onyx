@@ -248,6 +248,28 @@ body {
   border-color: rgba(0, 0, 0, 0.5);
 }
 
+/* ── Dropdown/kebab menu shadow ──────────────────────────────────── */
+
+.menu-shadow {
+  box-shadow: 0 4px 10px 0 rgba(0, 0, 0, 0.12);
+}
+.dark .menu-shadow {
+  box-shadow: 0 4px 10px 0 rgba(0, 0, 0, 0.3);
+}
+
+/* ── Borderless mode: square corners on all popups/overlays ─────── */
+
+.decorations-none .rounded-sm,
+.decorations-none .rounded,
+.decorations-none .rounded-md,
+.decorations-none .rounded-lg,
+.decorations-none .rounded-xl,
+.decorations-none .rounded-2xl,
+.decorations-none .rounded-3xl,
+.decorations-none .dropdown-menu button {
+  border-radius: 0 !important;
+}
+
 /* ── Accessibility: Reduced motion ───────────────────────────────── */
 
 @media (prefers-reduced-motion: reduce) {

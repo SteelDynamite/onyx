@@ -136,7 +136,7 @@
       </svg>
     </button>
     {#if showKebab}
-      <div class="absolute right-0 top-full z-10 mt-1 w-40 rounded-xl border border-border-light bg-surface-light py-1 shadow-lg dark:border-border-dark dark:bg-surface-dark">
+      <div class="dropdown-menu absolute right-0 top-full z-10 mt-1 w-40 rounded-xl border border-border-light bg-surface-light py-1 menu-shadow dark:border-border-dark dark:bg-surface-dark">
         <button
           onclick={startRename}
           class="flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/10"
@@ -271,18 +271,16 @@
   {#if isLinux}
     <!-- Window decorations (Linux only) -->
     <section class="mt-6">
-      <label class="flex cursor-pointer items-center justify-between gap-3">
-        <div>
-          <p class="text-sm font-medium">System window decorations</p>
-          <p class="text-xs opacity-50">Use the system title bar instead of the custom border</p>
-        </div>
-        <input
-          type="checkbox"
-          checked={app.systemDecorations}
-          onchange={(e) => app.setSystemDecorations((e.target as HTMLInputElement).checked)}
-          class="h-4 w-4 cursor-pointer accent-primary"
-        />
-      </label>
+      <label class="mb-1 block text-xs font-medium opacity-60">Window decorations</label>
+      <select
+        value={app.windowDecorations}
+        onchange={(e) => app.setWindowDecorations((e.target as HTMLSelectElement).value as "custom" | "none" | "system")}
+        class="w-full appearance-none rounded-lg border border-border-light bg-surface-light px-3 py-2 text-sm text-text-light outline-none focus:border-primary dark:border-border-dark dark:bg-surface-dark dark:text-text-dark"
+      >
+        <option value="custom">Custom border</option>
+        <option value="none">Borderless</option>
+        <option value="system">System title bar</option>
+      </select>
     </section>
   {/if}
 

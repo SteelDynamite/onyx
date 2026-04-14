@@ -18,9 +18,12 @@ listen("fs-changed", () => {
 
 // ── Reactive state ───────────────────────────────────────────────────
 
-const LS_DECORATIONS_KEY = "systemDecorations";
-let systemDecorations = $state(localStorage.getItem(LS_DECORATIONS_KEY) === "true");
-if (systemDecorations) getCurrentWindow().setDecorations(true);
+const LS_DECORATIONS_KEY = "windowDecorations";
+let windowDecorations = $state<"custom" | "none" | "system">(
+  (localStorage.getItem(LS_DECORATIONS_KEY) as "custom" | "none" | "system") ?? "custom"
+);
+if (windowDecorations === "system") getCurrentWindow().setDecorations(true);
+if (windowDecorations === "none") document.documentElement.classList.add("decorations-none");
 
 let screen = $state<Screen>("setup");
 let config = $state<AppConfig | null>(null);
@@ -433,10 +436,11 @@ async function setSyncIntervalUnfocused(secs: number | null) {
   }
 }
 
-function setSystemDecorations(value: boolean) {
-  systemDecorations = value;
-  localStorage.setItem(LS_DECORATIONS_KEY, String(value));
-  getCurrentWindow().setDecorations(value);
+function setWindowDecorations(value: "custom" | "none" | "system") {
+  windowDecorations = value;
+  localStorage.setItem(LS_DECORATIONS_KEY, value);
+  getCurrentWindow().setDecorations(value === "system");
+  document.documentElement.classList.toggle("decorations-none", value === "none");
 }
 
 async function setTheme(theme: string | null) {
@@ -559,8 +563,8 @@ export const app = {
   get lastSyncResult() {
     return lastSyncResult;
   },
-  get systemDecorations() {
-    return systemDecorations;
+  get windowDecorations() {
+    return windowDecorations;
   },
   get error() {
     return error;
@@ -595,7 +599,7 @@ export const app = {
   stopAutoSync,
   setSyncInterval,
   setSyncIntervalUnfocused,
-  setSystemDecorations,
+  setWindowDecorations,
   setTheme,
   addWebdavWorkspace,
   forgetMissingWorkspace,
