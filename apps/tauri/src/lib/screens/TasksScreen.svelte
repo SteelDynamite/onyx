@@ -382,37 +382,39 @@
         </button>
       {/each}
 
-      <!-- New list inline -->
-      <div class="px-2 mt-1">
-        {#if showNewList}
-          <div class="flex gap-2 px-1">
-            <input
-              type="text"
-              bind:value={newListName}
-              placeholder="List name"
-              class="min-w-0 flex-1 rounded-lg border border-border-light bg-transparent px-3 py-2 text-sm outline-none focus:border-primary dark:border-border-dark"
-              onkeydown={(e) => { if (e.key === "Enter") handleNewList(); if (e.key === "Escape") { showNewList = false; newListName = ""; } }}
-            />
+      <!-- New list inline (hidden for read-only Google Tasks workspaces) -->
+      {#if !app.isGoogleTasks}
+        <div class="px-2 mt-1">
+          {#if showNewList}
+            <div class="flex gap-2 px-1">
+              <input
+                type="text"
+                bind:value={newListName}
+                placeholder="List name"
+                class="min-w-0 flex-1 rounded-lg border border-border-light bg-transparent px-3 py-2 text-sm outline-none focus:border-primary dark:border-border-dark"
+                onkeydown={(e) => { if (e.key === "Enter") handleNewList(); if (e.key === "Escape") { showNewList = false; newListName = ""; } }}
+              />
+              <button
+                onclick={handleNewList}
+                disabled={!newListName.trim()}
+                class="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+              >
+                Add
+              </button>
+            </div>
+          {:else}
             <button
-              onclick={handleNewList}
-              disabled={!newListName.trim()}
-              class="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+              onclick={() => (showNewList = true)}
+              class="w-full rounded-lg px-3 py-2.5 text-left text-sm text-primary hover:bg-primary/5"
             >
-              Add
+              + New list
             </button>
-          </div>
-        {:else}
-          <button
-            onclick={() => (showNewList = true)}
-            class="w-full rounded-lg px-3 py-2.5 text-left text-sm text-primary hover:bg-primary/5"
-          >
-            + New list
-          </button>
-        {/if}
-      </div>
+          {/if}
+        </div>
+      {/if}
     </div>
 
-    <!-- Drawer footer: sync status -->
+    <!-- Drawer footer: sync status / workspace type label -->
     <div class="shrink-0 px-4 py-2.5" style="padding-bottom: max(1.25rem, var(--safe-bottom))">
       {#if app.isWebdav}
         <div class="flex items-center gap-2">
@@ -424,6 +426,23 @@
             {app.syncing ? "Syncing..." : app.syncStatus === "synced" || app.syncStatus === "idle" ? "Synced" : app.syncStatus === "error" ? "Sync error" : "Offline"}{#if !app.syncing && app.lastSyncResult && (app.lastSyncResult.uploaded > 0 || app.lastSyncResult.downloaded > 0)}&nbsp;&nbsp;{#if app.lastSyncResult.uploaded > 0}↑{app.lastSyncResult.uploaded}{/if}{#if app.lastSyncResult.uploaded > 0 && app.lastSyncResult.downloaded > 0} {/if}{#if app.lastSyncResult.downloaded > 0}↓{app.lastSyncResult.downloaded}{/if}{/if}
           </span>
           <!-- Manual sync button -->
+          <button
+            onclick={() => app.triggerSync()}
+            disabled={app.syncing}
+            class="rounded-lg p-1.5 hover:bg-black/5 disabled:opacity-30 dark:hover:bg-white/10"
+            title="Sync now"
+          >
+            <svg class="h-4 w-4" style={app.syncing ? 'animation: spin 1s linear infinite reverse' : ''} viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd" />
+            </svg>
+          </button>
+        </div>
+      {:else if app.isGoogleTasks}
+        <div class="flex items-center gap-2">
+          <span
+            class="inline-block h-2 w-2 rounded-full {app.syncing ? 'animate-pulse bg-primary' : app.syncStatus === 'synced' || app.syncStatus === 'idle' ? 'bg-green-500' : app.syncStatus === 'error' ? 'bg-red-500' : 'bg-gray-400'}"
+          ></span>
+          <span class="flex-1 text-xs opacity-60">Google Tasks Workspace (Read Only)</span>
           <button
             onclick={() => app.triggerSync()}
             disabled={app.syncing}
@@ -523,15 +542,17 @@
               </button>
               {#if showListMenu}
                 <div class="dropdown-menu absolute right-0 top-full z-40 mt-1 min-w-[200px] rounded-lg border border-border-light bg-surface-light py-1 menu-shadow dark:border-border-dark dark:bg-surface-dark">
-                  <button
-                    onclick={startRenameList}
-                    class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"
-                  >
-                    <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                      <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
-                    </svg>
-                    Rename
-                  </button>
+                  {#if !app.isGoogleTasks}
+                    <button
+                      onclick={startRenameList}
+                      class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"
+                    >
+                      <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                      </svg>
+                      Rename
+                    </button>
+                  {/if}
                   <button
                     onclick={handleToggleGroupByDueDate}
                     class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"
@@ -546,7 +567,21 @@
                       </svg>
                     {/if}
                   </button>
-                  {#if app.completedTasks.length > 0}
+                  <button
+                    onclick={() => (showSubtasks = !showSubtasks)}
+                    class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"
+                  >
+                    <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                      <path fill-rule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm4 4a1 1 0 011-1h8a1 1 0 110 2H8a1 1 0 01-1-1zm4 4a1 1 0 011-1h4a1 1 0 110 2h-4a1 1 0 01-1-1z" clip-rule="evenodd" />
+                    </svg>
+                    Show subtasks
+                    {#if showSubtasks}
+                      <svg class="ml-auto h-4 w-4 text-primary" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" />
+                      </svg>
+                    {/if}
+                  </button>
+                  {#if !app.isGoogleTasks && app.completedTasks.length > 0}
                     <button
                       onclick={promptDeleteCompleted}
                       class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-danger hover:bg-black/5 dark:hover:bg-white/10"
@@ -686,21 +721,23 @@
           {/key}
         </main>
 
-        <!-- FAB button -->
-        <div
-          class="pointer-events-none absolute left-0 right-0 z-20 flex justify-center transition-all duration-250 ease-out {newTaskState.open ? 'opacity-0 scale-75' : ''} {showDrawer || taskStack.length > 0 ? 'translate-y-24 opacity-0' : 'translate-y-0 opacity-100'}"
-          style="bottom: max(1.5rem, var(--safe-bottom))"
-        >
-          <button
-            onclick={() => { if (app.activeListId) newTaskState.open = true; }}
-            disabled={!app.activeListId}
-            class="pointer-events-auto flex h-14 w-14 items-center justify-center rounded-full bg-primary text-white shadow-lg transition-transform hover:scale-105 active:scale-95 disabled:opacity-40 disabled:shadow-none"
+        <!-- FAB button (hidden for read-only Google Tasks workspaces) -->
+        {#if !app.isGoogleTasks}
+          <div
+            class="pointer-events-none absolute left-0 right-0 z-20 flex justify-center transition-all duration-250 ease-out {newTaskState.open ? 'opacity-0 scale-75' : ''} {showDrawer || taskStack.length > 0 ? 'translate-y-24 opacity-0' : 'translate-y-0 opacity-100'}"
+            style="bottom: max(1.5rem, var(--safe-bottom))"
           >
-            <svg class="h-7 w-7" viewBox="0 0 20 20" fill="currentColor">
-              <path d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" />
-            </svg>
-          </button>
-        </div>
+            <button
+              onclick={() => { if (app.activeListId) newTaskState.open = true; }}
+              disabled={!app.activeListId}
+              class="pointer-events-auto flex h-14 w-14 items-center justify-center rounded-full bg-primary text-white shadow-lg transition-transform hover:scale-105 active:scale-95 disabled:opacity-40 disabled:shadow-none"
+            >
+              <svg class="h-7 w-7" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" />
+              </svg>
+            </button>
+          </div>
+        {/if}
       </div>
 
       <!-- Sub-panel: Task detail -->

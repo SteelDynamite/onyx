@@ -5,6 +5,7 @@ pub mod config;
 pub mod error;
 pub mod webdav;
 pub mod sync;
+pub mod google_tasks;
 
 pub use models::{Task, TaskStatus, TaskList};
 pub use repository::TaskRepository;

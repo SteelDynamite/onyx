@@ -18,7 +18,7 @@ export interface TaskList {
   group_by_date: boolean;
 }
 
-export type WorkspaceMode = "local" | "webdav";
+export type WorkspaceMode = "local" | "webdav" | "googletasks";
 
 export interface WorkspaceConfig {
   name: string;
@@ -26,6 +26,7 @@ export interface WorkspaceConfig {
   mode: WorkspaceMode;
   webdav_url: string | null;
   webdav_path: string | null;
+  google_account: string | null;
   last_sync: string | null;
   theme: string | null;
   sync_interval_secs: number | null;

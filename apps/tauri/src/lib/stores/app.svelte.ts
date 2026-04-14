@@ -13,7 +13,7 @@ import type {
 listen("fs-changed", () => {
   loadLists();
   // Debounced sync for WebDAV workspaces on local file changes
-  if (isWebdav) debouncedSync();
+  if (isSyncedWorkspace) debouncedSync();
 });
 
 // ── Reactive state ───────────────────────────────────────────────────
@@ -148,6 +148,12 @@ let isWebdav = $derived(
     ? config.workspaces[config.current_workspace]?.mode === "webdav"
     : false,
 );
+let isGoogleTasks = $derived(
+  config?.current_workspace
+    ? config.workspaces[config.current_workspace]?.mode === "googletasks"
+    : false,
+);
+let isSyncedWorkspace = $derived(isWebdav || isGoogleTasks);
 let syncIntervalSecs = $derived(
   config?.current_workspace
     ? config.workspaces[config.current_workspace]?.sync_interval_secs ?? DEFAULT_SYNC_INTERVAL_SECS
@@ -177,7 +183,7 @@ async function loadConfig() {
       if (lists.length > 0 && !activeListId) activeListId = lists[0].id;
       if (activeListId) await loadTasks();
       screen = "tasks";
-      if (isWebdav) startAutoSync();
+      if (isSyncedWorkspace) startAutoSync();
     } else {
       screen = "setup";
     }
@@ -210,7 +216,7 @@ async function switchWorkspace(id: string) {
     await loadLists();
     const ws = config?.workspaces[id];
     if (ws) invoke("watch_workspace", { path: ws.path }).catch((e) => console.warn("File watcher failed:", e));
-    if (isWebdav) startAutoSync(); else stopAutoSync();
+    if (isSyncedWorkspace) startAutoSync(); else stopAutoSync();
     error = null;
   } catch (e) {
     error = String(e);
@@ -411,10 +417,14 @@ async function triggerSync() {
   if (!config?.current_workspace || syncing) return;
   syncing = true;
   try {
-    const result = await invoke<SyncResult>("sync_workspace", {
-      workspaceId: config.current_workspace,
-      mode: "full",
-    });
+    const result = isGoogleTasks
+      ? await invoke<SyncResult>("sync_google_tasks_workspace", {
+          workspaceId: config.current_workspace,
+        })
+      : await invoke<SyncResult>("sync_workspace", {
+          workspaceId: config.current_workspace,
+          mode: "full",
+        });
     lastSyncResult = result;
     lastSyncTime = Date.now();
     syncStatus = result.errors.length > 0 ? "error" : "synced";
@@ -476,7 +486,7 @@ async function setSyncInterval(secs: number | null) {
       intervalSecs: secs,
     });
     config = await invoke<AppConfig>("get_config");
-    if (isWebdav) startAutoSync();
+    if (isSyncedWorkspace) startAutoSync();
   } catch (e) {
     error = String(e);
   }
@@ -490,7 +500,7 @@ async function setSyncIntervalUnfocused(secs: number | null) {
       intervalSecs: secs,
     });
     config = await invoke<AppConfig>("get_config");
-    if (isWebdav) startAutoSync();
+    if (isSyncedWorkspace) startAutoSync();
   } catch (e) {
     error = String(e);
   }
@@ -534,9 +544,27 @@ async function addWebdavWorkspace(name: string, webdavUrl: string, webdavPath: s
       const ws = config.workspaces[config.current_workspace];
       if (ws) invoke("watch_workspace", { path: ws.path }).catch((e) => console.warn("File watcher failed:", e));
     }
-    if (isWebdav) startAutoSync();
+    if (isSyncedWorkspace) startAutoSync();
   } catch (e) {
     initialSync = false;
+    error = String(e);
+  }
+}
+
+async function addGoogleTasksWorkspace(
+  name: string,
+  accessToken: string,
+  refreshToken: string,
+  account: string,
+) {
+  try {
+    await invoke("add_google_tasks_workspace", { name, accessToken, refreshToken, account });
+    config = await invoke<AppConfig>("get_config");
+    screen = "tasks";
+    error = null;
+    await loadLists();
+    startAutoSync();
+  } catch (e) {
     error = String(e);
   }
 }
@@ -617,6 +645,12 @@ export const app = {
   get isWebdav() {
     return isWebdav;
   },
+  get isGoogleTasks() {
+    return isGoogleTasks;
+  },
+  get isSyncedWorkspace() {
+    return isSyncedWorkspace;
+  },
   get syncIntervalSecs() {
     return syncIntervalSecs;
   },
@@ -665,6 +699,7 @@ export const app = {
   setWindowDecorations,
   setTheme,
   addWebdavWorkspace,
+  addGoogleTasksWorkspace,
   forgetMissingWorkspace,
   setScreen,
   clearError,
