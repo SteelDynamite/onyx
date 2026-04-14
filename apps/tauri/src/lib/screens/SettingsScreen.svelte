@@ -94,9 +94,10 @@
 <svelte:window onclick={handleWindowClick} />
 
 <header
+  data-tauri-drag-region
   class="flex items-center justify-between border-b border-border-light px-4 py-3 dark:border-border-dark"
 >
-  <h1 class="text-lg font-bold">Workspace Settings</h1>
+  <h1 class="text-lg font-bold" data-tauri-drag-region>Workspace Settings</h1>
   <button
     onclick={() => onclose?.()}
     class="rounded-lg p-1.5 hover:bg-black/5 dark:hover:bg-white/10"
