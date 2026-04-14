@@ -166,10 +166,10 @@ mod tests {
     }
 
     #[test]
-    fn test_task_with_due_date() {
+    fn test_task_with_date() {
         let dt = Utc::now();
-        let task = Task::new("T".to_string()).with_due_date(dt);
-        assert_eq!(task.due_date, Some(dt));
+        let task = Task::new("T".to_string()).with_date(dt);
+        assert_eq!(task.date, Some(dt));
     }
 
     #[test]
@@ -242,7 +242,7 @@ mod tests {
         let list = TaskList::new("My List".to_string());
         assert_eq!(list.title, "My List");
         assert!(list.tasks.is_empty());
-        assert!(!list.group_by_due_date);
+        assert!(!list.group_by_date);
         assert!(list.created_at <= Utc::now());
         assert!(list.updated_at <= Utc::now());
     }

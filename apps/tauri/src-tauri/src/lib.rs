@@ -12,11 +12,30 @@ use uuid::Uuid;
 
 use onyx_core::{
     config::{AppConfig, WorkspaceConfig, WorkspaceMode},
+    google_tasks,
     models::{Task, TaskList, TaskStatus},
     repository::TaskRepository,
     sync::{self, SyncMode, SyncResult as CoreSyncResult},
     webdav,
 };
+
+// ── Google OAuth constants ───────────────────────────────────────────
+// Replace these placeholder values with real credentials from Google Cloud Console.
+// Desktop: "Desktop app" OAuth client type. Android: "Android" OAuth client type.
+// Neither value is a security secret in the traditional sense — both can be extracted
+// from the binary — but keep them out of public source control where possible.
+
+/// Placeholder: replace with your "Desktop app" client ID from Google Cloud Console.
+#[cfg(not(target_os = "android"))]
+const GOOGLE_CLIENT_ID: &str = "REPLACE_WITH_DESKTOP_CLIENT_ID.apps.googleusercontent.com";
+
+/// Desktop app client secret (required for token exchange even though not truly secret).
+#[cfg(not(target_os = "android"))]
+const GOOGLE_CLIENT_SECRET: &str = "REPLACE_WITH_DESKTOP_CLIENT_SECRET";
+
+/// Placeholder: replace with your "Android" client ID from Google Cloud Console.
+#[cfg(target_os = "android")]
+const GOOGLE_CLIENT_ID: &str = "REPLACE_WITH_ANDROID_CLIENT_ID.apps.googleusercontent.com";
 use tauri_plugin_credentials::Credentials;
 
 #[cfg(not(target_os = "android"))]
@@ -266,6 +285,12 @@ async fn rename_workspace(
                 ws.webdav_path = Some(new_remote_path);
             }
             s.repo = None;
+            s.save_config()?;
+        }
+        WorkspaceMode::GoogleTasks => {
+            // Google Tasks workspaces: local cache path is app-managed; only update display name.
+            let mut s = lock_state(&state)?;
+            s.config.rename_workspace(&id, new_name).map_err(|e| e.to_string())?;
             s.save_config()?;
         }
     }
@@ -816,6 +841,320 @@ async fn sync_workspace(
     Ok(result.into())
 }
 
+// ── Google Tasks OAuth + workspace ──────────────────────────────────
+
+/// Returned to the frontend after a successful Google OAuth flow.
+#[derive(Debug, Serialize, Deserialize)]
+struct GoogleAuthResult {
+    access_token: String,
+    refresh_token: String,
+    /// Display name or email for the connected account.
+    account: String,
+}
+
+/// Desktop-only: run the PKCE OAuth 2.0 Authorization Code flow using a temporary
+/// loopback HTTP server. Opens the system browser, waits for the redirect with the
+/// auth code, exchanges it for tokens, and returns them.
+///
+/// On Android this is a stub — the Kotlin layer handles OAuth via Credential Manager.
+#[tauri::command]
+#[cfg(not(target_os = "android"))]
+async fn start_google_oauth() -> Result<GoogleAuthResult, String> {
+    use sha2::{Digest, Sha256};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    // ── PKCE code verifier + challenge ───────────────────────────────
+    // Build 64 random bytes from four UUID v4 values (each contributes 122 bits of
+    // randomness). Encode as base64url to produce a valid code verifier.
+    let rand_bytes: Vec<u8> = (0..4)
+        .flat_map(|_| uuid::Uuid::new_v4().as_bytes().to_vec())
+        .collect();
+    let verifier = base64url_encode(&rand_bytes);
+
+    let challenge_bytes = Sha256::digest(verifier.as_bytes());
+    let challenge = base64url_encode(&challenge_bytes);
+
+    // ── Loopback listener ────────────────────────────────────────────
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .map_err(|e| format!("Failed to bind loopback listener: {}", e))?;
+    let port = listener.local_addr().map_err(|e| e.to_string())?.port();
+    let redirect_uri = format!("http://127.0.0.1:{}", port);
+
+    // ── Build auth URL ───────────────────────────────────────────────
+    let scope = "https://www.googleapis.com/auth/tasks.readonly \
+                 https://www.googleapis.com/auth/userinfo.email";
+    let auth_url = format!(
+        "https://accounts.google.com/o/oauth2/v2/auth\
+         ?client_id={client_id}\
+         &redirect_uri={redirect_uri}\
+         &response_type=code\
+         &scope={scope}\
+         &code_challenge={challenge}\
+         &code_challenge_method=S256\
+         &access_type=offline\
+         &prompt=consent",
+        client_id = GOOGLE_CLIENT_ID,
+        redirect_uri = urlencodeq(&redirect_uri),
+        scope = urlencodeq(scope),
+        challenge = challenge,
+    );
+
+    // Open system browser
+    open_browser(&auth_url);
+
+    // ── Accept one connection on the loopback server ─────────────────
+    let (mut stream, _) = listener.accept().await
+        .map_err(|e| format!("Failed to accept OAuth callback: {}", e))?;
+
+    let mut buf = vec![0u8; 4096];
+    let n = stream.read(&mut buf).await
+        .map_err(|e| format!("Failed to read OAuth callback request: {}", e))?;
+    let request = String::from_utf8_lossy(&buf[..n]);
+
+    // Parse the request line: "GET /?code=...&state=... HTTP/1.1"
+    let code = request.lines()
+        .next()
+        .and_then(|line| line.split_whitespace().nth(1))
+        .and_then(|path| {
+            path.split('?').nth(1).and_then(|qs| {
+                qs.split('&')
+                    .find(|p| p.starts_with("code="))
+                    .and_then(|p| p.strip_prefix("code="))
+                    .map(|s| s.to_string())
+            })
+        })
+        .ok_or_else(|| "OAuth callback did not contain an authorization code".to_string())?;
+
+    // Return a simple success page to the browser
+    let html_response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n\
+        <html><body style='font-family:sans-serif;text-align:center;padding-top:4rem'>\
+        <h2>Connected!</h2><p>You can close this tab and return to Onyx.</p>\
+        </body></html>";
+    let _ = stream.write_all(html_response.as_bytes()).await;
+
+    // ── Exchange code for tokens ─────────────────────────────────────
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let params = [
+        ("client_id", GOOGLE_CLIENT_ID),
+        ("client_secret", GOOGLE_CLIENT_SECRET),
+        ("code", &code),
+        ("redirect_uri", &redirect_uri),
+        ("grant_type", "authorization_code"),
+        ("code_verifier", &verifier),
+    ];
+
+    let resp = client
+        .post("https://oauth2.googleapis.com/token")
+        .form(&params)
+        .send()
+        .await
+        .map_err(|e| format!("Token exchange request failed: {}", e))?;
+
+    if !resp.status().is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("Token exchange failed: {}", body));
+    }
+
+    #[derive(serde::Deserialize)]
+    struct TokenResponse {
+        access_token: String,
+        refresh_token: Option<String>,
+    }
+
+    let token_resp: TokenResponse = resp.json().await
+        .map_err(|e| format!("Failed to parse token response: {}", e))?;
+    let refresh_token = token_resp.refresh_token
+        .ok_or_else(|| "Google did not return a refresh token — try revoking access and reconnecting".to_string())?;
+
+    // ── Fetch account email ──────────────────────────────────────────
+    let userinfo_resp = client
+        .get("https://www.googleapis.com/oauth2/v2/userinfo")
+        .bearer_auth(&token_resp.access_token)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch user info: {}", e))?;
+
+    #[derive(serde::Deserialize)]
+    struct UserInfo {
+        #[serde(default)]
+        email: String,
+    }
+
+    let account = if userinfo_resp.status().is_success() {
+        userinfo_resp.json::<UserInfo>().await
+            .map(|u| u.email)
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    Ok(GoogleAuthResult {
+        access_token: token_resp.access_token,
+        refresh_token,
+        account,
+    })
+}
+
+#[tauri::command]
+#[cfg(target_os = "android")]
+async fn start_google_oauth() -> Result<GoogleAuthResult, String> {
+    // On Android, OAuth is handled by the Kotlin layer via Credential Manager.
+    // This stub exists only so the command is registered on all platforms.
+    Err("Android OAuth must be initiated via the native sign-in flow".to_string())
+}
+
+/// Create a new Google Tasks workspace: provision a local cache directory,
+/// store OAuth credentials, run the initial sync, and make it the active workspace.
+#[tauri::command]
+async fn add_google_tasks_workspace(
+    name: String,
+    access_token: String,
+    refresh_token: String,
+    account: String,
+    app_handle: tauri::AppHandle,
+    state: State<'_, Mutex<AppState>>,
+) -> Result<(), String> {
+    let managed_dir = {
+        let s = lock_state(&state)?;
+        let dir_id = uuid::Uuid::new_v4().to_string();
+        s.app_data_dir.join("google-tasks").join(&dir_id)
+    };
+
+    std::fs::create_dir_all(&managed_dir).map_err(|e| e.to_string())?;
+
+    // Run initial sync before registering the workspace so the user sees content immediately.
+    google_tasks::sync_google_tasks(&managed_dir, &access_token)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let mut s = lock_state(&state)?;
+    let mut ws = WorkspaceConfig::new(name, managed_dir.clone());
+    ws.mode = WorkspaceMode::GoogleTasks;
+    ws.google_account = if account.is_empty() { None } else { Some(account.clone()) };
+    ws.last_sync = Some(Utc::now());
+
+    let id = s.config.add_workspace(ws);
+    s.config.set_current_workspace(id.clone()).map_err(|e| e.to_string())?;
+    s.repo = None;
+    s.save_config()?;
+    drop(s);
+
+    // Store refresh token: domain = "google-oauth-{workspace_id}", username = account, password = refresh_token
+    let creds = app_handle.state::<Credentials<tauri::Wry>>();
+    let cred_key = format!("google-oauth-{}", id);
+    creds.store(&cred_key, &account, &refresh_token)?;
+
+    Ok(())
+}
+
+/// Sync a Google Tasks workspace: refresh the access token, then pull all remote changes.
+#[tauri::command]
+async fn sync_google_tasks_workspace(
+    workspace_id: String,
+    app_handle: tauri::AppHandle,
+    state: State<'_, Mutex<AppState>>,
+) -> Result<SyncResult, String> {
+    let workspace_path = {
+        let s = lock_state(&state)?;
+        s.config.workspaces.get(&workspace_id)
+            .ok_or("Workspace not found")?
+            .path
+            .clone()
+    };
+
+    // Load the stored refresh token.
+    let creds = app_handle.state::<Credentials<tauri::Wry>>();
+    let cred_key = format!("google-oauth-{}", workspace_id);
+    let (_account, refresh_token) = creds.load(&cred_key)?;
+
+    // Refresh to get a fresh access token.
+    #[cfg(not(target_os = "android"))]
+    let access_token = google_tasks::refresh_access_token(
+        GOOGLE_CLIENT_ID,
+        Some(GOOGLE_CLIENT_SECRET),
+        &refresh_token,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    #[cfg(target_os = "android")]
+    let access_token = google_tasks::refresh_access_token(
+        GOOGLE_CLIENT_ID,
+        None,
+        &refresh_token,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let result = google_tasks::sync_google_tasks(&workspace_path, &access_token)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    {
+        let mut s = lock_state(&state)?;
+        mute_watcher(&mut s);
+        if let Some(ws) = s.config.workspaces.get_mut(&workspace_id) {
+            ws.last_sync = Some(Utc::now());
+        }
+        s.save_config()?;
+    }
+
+    Ok(SyncResult {
+        uploaded: 0,
+        downloaded: result.downloaded,
+        deleted_local: 0,
+        deleted_remote: 0,
+        conflicts: 0,
+        errors: result.errors,
+    })
+}
+
+// ── OAuth helpers (desktop only) ─────────────────────────────────────
+
+#[cfg(not(target_os = "android"))]
+fn open_browser(url: &str) {
+    #[cfg(target_os = "linux")]
+    { let _ = std::process::Command::new("xdg-open").arg(url).spawn(); }
+    #[cfg(target_os = "macos")]
+    { let _ = std::process::Command::new("open").arg(url).spawn(); }
+    #[cfg(target_os = "windows")]
+    { let _ = std::process::Command::new("cmd").args(["/c", "start", "", url]).spawn(); }
+}
+
+/// Percent-encode a string for use in a URL query parameter value.
+#[cfg(not(target_os = "android"))]
+fn urlencodeq(s: &str) -> String {
+    s.bytes().flat_map(|b| match b {
+        b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9'
+        | b'-' | b'_' | b'.' | b'~' => vec![b as char],
+        _ => format!("%{:02X}", b).chars().collect(),
+    }).collect()
+}
+
+/// Encode bytes as base64url (RFC 4648 §5, no padding).
+#[cfg(not(target_os = "android"))]
+fn base64url_encode(data: &[u8]) -> String {
+    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    let mut out = String::with_capacity((data.len() * 4 + 2) / 3);
+    for chunk in data.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
+        let b2 = if chunk.len() > 2 { chunk[2] as u32 } else { 0 };
+        let n = (b0 << 16) | (b1 << 8) | b2;
+        out.push(CHARS[((n >> 18) & 0x3F) as usize] as char);
+        out.push(CHARS[((n >> 12) & 0x3F) as usize] as char);
+        if chunk.len() > 1 { out.push(CHARS[((n >> 6) & 0x3F) as usize] as char); }
+        if chunk.len() > 2 { out.push(CHARS[(n & 0x3F) as usize] as char); }
+    }
+    out
+}
+
 // ── File watcher ────────────────────────────────────────────────────
 
 #[cfg(not(target_os = "android"))]
@@ -939,6 +1278,9 @@ pub fn run() {
             test_webdav_connection,
             sync_workspace,
             watch_workspace,
+            start_google_oauth,
+            add_google_tasks_workspace,
+            sync_google_tasks_workspace,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

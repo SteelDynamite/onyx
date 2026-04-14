@@ -15,7 +15,7 @@
   const isMobile = currentPlatform === "android" || currentPlatform === "ios";
 
   // ── Shared state ──────────────────────────────────────────────────
-  let mode = $state<"local" | "webdav" | null>(isMobile ? "webdav" : null);
+  let mode = $state<"local" | "webdav" | "googletasks" | null>(isMobile ? "webdav" : null);
   let name = $state("Onyx");
   let path = $state("");
 
@@ -42,6 +42,13 @@
   // Create workspace state
   let createName = $state("Onyx");
   let creating = $state(false);
+
+  // ── Google Tasks state ────────────────────────────────────────────
+  let googleStep = $state<"connect" | "confirm">("connect");
+  let googleConnecting = $state(false);
+  let googleError = $state<string | null>(null);
+  let googleAuth = $state<{ accessToken: string; refreshToken: string; account: string } | null>(null);
+  let googleWorkspaceName = $state("Google Tasks");
 
   // ── Derived ───────────────────────────────────────────────────────
   let currentBrowsePath = $derived(browsePath.join("/"));
@@ -186,6 +193,55 @@
     }
   }
 
+  // ── Google Tasks handlers ─────────────────────────────────────────
+
+  async function connectGoogle() {
+    googleConnecting = true;
+    googleError = null;
+    try {
+      const result = await invoke<{ access_token: string; refresh_token: string; account: string }>(
+        "start_google_oauth"
+      );
+      googleAuth = {
+        accessToken: result.access_token,
+        refreshToken: result.refresh_token,
+        account: result.account,
+      };
+      googleWorkspaceName = result.account || "Google Tasks";
+      googleStep = "confirm";
+    } catch (e) {
+      googleError = String(e);
+    } finally {
+      googleConnecting = false;
+    }
+  }
+
+  async function handleCreateGoogle() {
+    if (!googleAuth) return;
+    creating = true;
+    googleError = null;
+    try {
+      await app.addGoogleTasksWorkspace(
+        googleWorkspaceName.trim() || "Google Tasks",
+        googleAuth.accessToken,
+        googleAuth.refreshToken,
+        googleAuth.account,
+      );
+    } catch (e) {
+      googleError = String(e);
+      creating = false;
+    }
+  }
+
+  function googleBack() {
+    if (googleStep === "confirm") {
+      googleStep = "connect";
+      googleAuth = null;
+    } else {
+      goBack();
+    }
+  }
+
   // ── Window dragging ───────────────────────────────────────────────
 
   function handleDrag(e: MouseEvent) {
@@ -206,6 +262,10 @@
     browsePath = [];
     browseEntries = [];
     browseError = null;
+    googleStep = "connect";
+    googleAuth = null;
+    googleError = null;
+    googleConnecting = false;
   }
 
   function webdavBack() {
@@ -285,11 +345,21 @@
 
         <button
           onclick={() => (mode = "webdav")}
-          class="w-full rounded-xl border border-border-light p-4 text-left hover:bg-black/5 dark:border-border-dark dark:hover:bg-white/10"
+          class="mb-3 w-full rounded-xl border border-border-light p-4 text-left hover:bg-black/5 dark:border-border-dark dark:hover:bg-white/10"
         >
           <p class="text-sm font-semibold">WebDAV Server</p>
           <p class="mt-0.5 text-xs text-text-secondary-light dark:text-text-secondary-dark">
             Connect to a WebDAV server. The app manages local files automatically.
+          </p>
+        </button>
+
+        <button
+          onclick={() => (mode = "googletasks")}
+          class="w-full rounded-xl border border-border-light p-4 text-left hover:bg-black/5 dark:border-border-dark dark:hover:bg-white/10"
+        >
+          <p class="text-sm font-semibold">Google Tasks</p>
+          <p class="mt-0.5 text-xs text-text-secondary-light dark:text-text-secondary-dark">
+            Read your Google Tasks. Sign in with Google to sync. Read-only.
           </p>
         </button>
 
@@ -357,7 +427,7 @@
           </button>
         {/if}
 
-      {:else if webdavStep === "connect"}
+      {:else if mode === "webdav" && webdavStep === "connect"}
         <!-- Step 2b: WebDAV connect -->
         <p class="mb-6 text-sm text-text-secondary-light dark:text-text-secondary-dark">
           Connect to a WebDAV server.
@@ -406,7 +476,7 @@
           </button>
         {/if}
 
-      {:else if webdavStep === "browse"}
+      {:else if mode === "webdav" && webdavStep === "browse"}
         <!-- Step 3: Folder explorer -->
         <p class="mb-4 text-sm text-text-secondary-light dark:text-text-secondary-dark">
           Pick a folder or create a new workspace.
@@ -476,7 +546,7 @@
           Back
         </button>
 
-      {:else if webdavStep === "preview"}
+      {:else if mode === "webdav" && webdavStep === "preview"}
         <!-- Step 4a: Workspace preview -->
         <div class="mb-4 flex items-center gap-2">
           <button onclick={() => (webdavStep = "browse")} class="rounded-lg p-1 opacity-50 hover:opacity-80">
@@ -511,7 +581,7 @@
           Open Workspace
         </button>
 
-      {:else if webdavStep === "create"}
+      {:else if mode === "webdav" && webdavStep === "create"}
         <!-- Step 4b: Create workspace -->
         <div class="mb-4 flex items-center gap-2">
           <button onclick={() => (webdavStep = "browse")} class="rounded-lg p-1 opacity-50 hover:opacity-80">
@@ -546,6 +616,71 @@
           class="w-full rounded-lg bg-primary py-2.5 text-sm font-medium text-white hover:bg-primary-hover disabled:opacity-40"
         >
           {creating ? "Creating..." : "Create Workspace"}
+        </button>
+      {:else if mode === "googletasks" && googleStep === "connect"}
+        <!-- Google Tasks: step 1 — sign in -->
+        <p class="mb-6 text-sm text-text-secondary-light dark:text-text-secondary-dark">
+          Sign in with Google to sync your tasks. The workspace will be read-only.
+        </p>
+
+        {#if googleError}
+          <p class="mb-3 text-xs text-danger">{googleError}</p>
+        {/if}
+
+        <button
+          onclick={connectGoogle}
+          disabled={googleConnecting}
+          class="w-full rounded-lg bg-primary py-2.5 text-sm font-medium text-white hover:bg-primary-hover disabled:opacity-40"
+        >
+          {googleConnecting ? "Waiting for sign-in..." : "Sign in with Google"}
+        </button>
+
+        {#if !isMobile}
+          <button
+            onclick={goBack}
+            class="mt-3 w-full rounded-lg py-2 text-sm opacity-50 hover:opacity-80"
+          >
+            Back
+          </button>
+        {/if}
+
+      {:else if mode === "googletasks" && googleStep === "confirm"}
+        <!-- Google Tasks: step 2 — name workspace and confirm -->
+
+        <div class="mb-4 flex items-center gap-2">
+          <button onclick={googleBack} class="rounded-lg p-1 opacity-50 hover:opacity-80">
+            <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M17 10a.75.75 0 01-.75.75H5.612l4.158 3.96a.75.75 0 11-1.04 1.08l-5.5-5.25a.75.75 0 010-1.08l5.5-5.25a.75.75 0 111.04 1.08L5.612 9.25H16.25A.75.75 0 0117 10z" />
+            </svg>
+          </button>
+          <h2 class="text-lg font-semibold">Connected</h2>
+        </div>
+
+        <p class="mb-4 text-sm text-text-secondary-light dark:text-text-secondary-dark">
+          Signed in as <span class="font-medium">{googleAuth?.account || "Google Account"}</span>.
+          All your Google Tasks lists will be imported as a read-only workspace.
+        </p>
+
+        <label class="mb-1 block text-sm font-medium">
+          Workspace name
+          <input
+            type="text"
+            bind:value={googleWorkspaceName}
+            placeholder="Google Tasks"
+            class="mt-1 mb-4 w-full rounded-lg border border-border-light bg-transparent px-3 py-2 text-sm font-normal outline-none focus:border-primary dark:border-border-dark"
+          />
+        </label>
+
+        {#if googleError}
+          <p class="mb-3 text-xs text-danger">{googleError}</p>
+        {/if}
+
+        <button
+          onclick={handleCreateGoogle}
+          disabled={creating}
+          class="w-full rounded-lg bg-primary py-2.5 text-sm font-medium text-white hover:bg-primary-hover disabled:opacity-40"
+        >
+          {creating ? "Syncing..." : "Create Workspace"}
         </button>
       {/if}
     </div>

@@ -139,8 +139,8 @@
   <!-- Date picker overlay -->
   {#if showDatePicker}
     <DateTimePicker
-      value={dueDate}
-      has_time={dueDateHasTime}
+      value={date}
+      has_time={dateHasTime}
       onchange={handleDateChange}
       onclose={() => (showDatePicker = false)}
     />
