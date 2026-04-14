@@ -62,7 +62,7 @@
 <!-- Backdrop + sheet wrapper -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
-  class="fixed inset-0 z-50 flex flex-col justify-end transition-opacity duration-250 ease-out {newTaskState.open ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}"
+  class="absolute inset-0 z-50 flex flex-col justify-end overflow-hidden transition-opacity duration-250 ease-out {newTaskState.open ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}"
   style="background: rgba(0,0,0,0.4)"
   onclick={handleClose}
   onkeydown={(e) => { if (e.key === "Escape") handleClose(); }}

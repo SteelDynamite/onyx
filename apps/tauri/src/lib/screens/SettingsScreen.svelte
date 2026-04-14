@@ -1,7 +1,10 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
+  import { platform } from "@tauri-apps/plugin-os";
   import { app } from "../stores/app.svelte";
   import ConfirmDialog from "../components/ConfirmDialog.svelte";
+
+  const isLinux = platform() === "linux";
 
   let { onclose, workspaceId, ondelete }: { onclose?: () => void; workspaceId: string; ondelete?: (id: string) => void } = $props();
 
@@ -91,9 +94,10 @@
 <svelte:window onclick={handleWindowClick} />
 
 <header
+  data-tauri-drag-region
   class="flex items-center justify-between border-b border-border-light px-4 py-3 dark:border-border-dark"
 >
-  <h1 class="text-lg font-bold">Workspace Settings</h1>
+  <h1 class="text-lg font-bold" data-tauri-drag-region>Workspace Settings</h1>
   <button
     onclick={() => onclose?.()}
     class="rounded-lg p-1.5 hover:bg-black/5 dark:hover:bg-white/10"
@@ -132,7 +136,7 @@
       </svg>
     </button>
     {#if showKebab}
-      <div class="absolute right-0 top-full z-10 mt-1 w-40 rounded-xl border border-border-light bg-surface-light py-1 shadow-lg dark:border-border-dark dark:bg-surface-dark">
+      <div class="dropdown-menu absolute right-0 top-full z-10 mt-1 w-40 rounded-xl border border-border-light bg-surface-light py-1 menu-shadow dark:border-border-dark dark:bg-surface-dark">
         <button
           onclick={startRename}
           class="flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/10"
@@ -260,8 +264,25 @@
       <option value="dracula">Dracula</option>
       <option value="solarized">Solarized Dark</option>
       <option value="onyx">Black and Gold</option>
+      <option value="ink">Ink</option>
     </select>
   </section>
+
+  {#if isLinux}
+    <!-- Window decorations (Linux only) -->
+    <section class="mt-6">
+      <label class="mb-1 block text-xs font-medium opacity-60">Window decorations</label>
+      <select
+        value={app.windowDecorations}
+        onchange={(e) => app.setWindowDecorations((e.target as HTMLSelectElement).value as "custom" | "none" | "system")}
+        class="w-full appearance-none rounded-lg border border-border-light bg-surface-light px-3 py-2 text-sm text-text-light outline-none focus:border-primary dark:border-border-dark dark:bg-surface-dark dark:text-text-dark"
+      >
+        <option value="custom">Custom border</option>
+        <option value="none">Borderless</option>
+        <option value="system">System title bar</option>
+      </select>
+    </section>
+  {/if}
 
   <p class="mt-8 text-center text-xs opacity-30">Tauri v2 + Svelte</p>
 </main>

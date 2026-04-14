@@ -160,7 +160,7 @@
       </svg>
     </button>
     {#if showMenu}
-      <div class="absolute right-0 top-full z-40 mt-1 min-w-[200px] rounded-lg border border-border-light bg-surface-light py-1 shadow-lg dark:border-border-dark dark:bg-surface-dark">
+      <div class="dropdown-menu absolute right-0 top-full z-40 mt-1 min-w-[200px] rounded-lg border border-border-light bg-surface-light py-1 menu-shadow dark:border-border-dark dark:bg-surface-dark">
         <button
           onclick={handleToggle}
           class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"
@@ -278,7 +278,7 @@
               </svg>
             </button>
             {#if showSubtaskMenu}
-              <div class="absolute right-0 top-full z-40 mt-1 min-w-[240px] rounded-lg border border-border-light bg-surface-light py-1 shadow-lg dark:border-border-dark dark:bg-surface-dark">
+              <div class="dropdown-menu absolute right-0 top-full z-40 mt-1 min-w-[240px] rounded-lg border border-border-light bg-surface-light py-1 menu-shadow dark:border-border-dark dark:bg-surface-dark">
                 <button
                   onclick={() => { showSubtaskMenu = false; confirmDeleteCompleted = true; }}
                   class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-danger hover:bg-black/5 dark:hover:bg-white/10"

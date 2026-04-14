@@ -290,7 +290,7 @@
         {#if showWorkspacePicker}
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
-            class="absolute left-0 top-full z-40 mt-1 w-full rounded-lg border border-border-light bg-surface-light py-1 shadow-lg dark:border-border-dark dark:bg-surface-dark"
+            class="dropdown-menu absolute left-0 top-full z-40 mt-1 w-full rounded-lg border border-border-light bg-surface-light py-1 menu-shadow dark:border-border-dark dark:bg-surface-dark"
           >
             {#each workspaceIds as wsId}
               {@const ws = app.config?.workspaces[wsId]}
@@ -500,7 +500,7 @@
                 </svg>
               </button>
               {#if showListMenu}
-                <div class="absolute right-0 top-full z-40 mt-1 min-w-[200px] rounded-lg border border-border-light bg-surface-light py-1 shadow-lg dark:border-border-dark dark:bg-surface-dark">
+                <div class="dropdown-menu absolute right-0 top-full z-40 mt-1 min-w-[200px] rounded-lg border border-border-light bg-surface-light py-1 menu-shadow dark:border-border-dark dark:bg-surface-dark">
                   <button
                     onclick={startRenameList}
                     class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"

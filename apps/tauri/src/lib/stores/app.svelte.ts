@@ -18,6 +18,13 @@ listen("fs-changed", () => {
 
 // ── Reactive state ───────────────────────────────────────────────────
 
+const LS_DECORATIONS_KEY = "windowDecorations";
+let windowDecorations = $state<"custom" | "none" | "system">(
+  (localStorage.getItem(LS_DECORATIONS_KEY) as "custom" | "none" | "system") ?? "custom"
+);
+if (windowDecorations === "system") getCurrentWindow().setDecorations(true);
+if (windowDecorations === "none") document.documentElement.classList.add("decorations-none");
+
 let screen = $state<Screen>("setup");
 let config = $state<AppConfig | null>(null);
 let lists = $state<TaskList[]>([]);
@@ -429,6 +436,13 @@ async function setSyncIntervalUnfocused(secs: number | null) {
   }
 }
 
+function setWindowDecorations(value: "custom" | "none" | "system") {
+  windowDecorations = value;
+  localStorage.setItem(LS_DECORATIONS_KEY, value);
+  getCurrentWindow().setDecorations(value === "system");
+  document.documentElement.classList.toggle("decorations-none", value === "none");
+}
+
 async function setTheme(theme: string | null) {
   if (!config?.current_workspace) return;
   try {
@@ -549,6 +563,9 @@ export const app = {
   get lastSyncResult() {
     return lastSyncResult;
   },
+  get windowDecorations() {
+    return windowDecorations;
+  },
   get error() {
     return error;
   },
@@ -582,6 +599,7 @@ export const app = {
   stopAutoSync,
   setSyncInterval,
   setSyncIntervalUnfocused,
+  setWindowDecorations,
   setTheme,
   addWebdavWorkspace,
   forgetMissingWorkspace,

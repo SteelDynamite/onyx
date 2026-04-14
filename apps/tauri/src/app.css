@@ -195,10 +195,6 @@ body {
   border-color: rgba(209, 191, 130, 0.15);
 }
 
-/* Thick gold window border */
-[data-theme="onyx"] .onyx-border {
-  border: 3px solid #a6905a;
-}
 
 [data-theme="solarized"] {
   --color-primary: #268bd2;
@@ -214,6 +210,64 @@ body {
   --color-border-light: #094959;
   --color-border-dark: #094959;
   --color-danger: #dc322f;
+}
+
+
+/* ── Ink (e-ink screen) theme ────────────────────────────────────── */
+
+[data-theme="ink"] {
+  --color-primary: #000000;
+  --color-primary-hover: #1a1a1a;
+  --color-surface-light: #ffffff;
+  --color-surface-dark: #ffffff;
+  --color-card-light: #f0f0f0;
+  --color-card-dark: #f0f0f0;
+  --color-text-light: #000000;
+  --color-text-dark: #000000;
+  --color-text-secondary-light: #444444;
+  --color-text-secondary-dark: #444444;
+  --color-border-light: #000000;
+  --color-border-dark: #000000;
+  --color-danger: #000000;
+}
+
+/* Suppress all shadows and decorative effects on ink screens */
+[data-theme="ink"] * {
+  box-shadow: none !important;
+  text-shadow: none !important;
+  scrollbar-color: #444444 transparent;
+}
+[data-theme="ink"] ::-webkit-scrollbar-thumb {
+  background: #444444;
+}
+[data-theme="ink"] select option {
+  background-color: #ffffff;
+  color: #000000;
+}
+[data-theme="ink"] .linux-window-border {
+  border-color: rgba(0, 0, 0, 0.5);
+}
+
+/* ── Dropdown/kebab menu shadow ──────────────────────────────────── */
+
+.menu-shadow {
+  box-shadow: 0 4px 10px 0 rgba(0, 0, 0, 0.12);
+}
+.dark .menu-shadow {
+  box-shadow: 0 4px 10px 0 rgba(0, 0, 0, 0.3);
+}
+
+/* ── Borderless mode: square corners on all popups/overlays ─────── */
+
+.decorations-none .rounded-sm,
+.decorations-none .rounded,
+.decorations-none .rounded-md,
+.decorations-none .rounded-lg,
+.decorations-none .rounded-xl,
+.decorations-none .rounded-2xl,
+.decorations-none .rounded-3xl,
+.decorations-none .dropdown-menu button {
+  border-radius: 0 !important;
 }
 
 /* ── Accessibility: Reduced motion ───────────────────────────────── */
