@@ -118,17 +118,17 @@ impl TaskRepository {
     }
 
     // Grouping preference
-    pub fn set_group_by_due_date(&mut self, list_id: Uuid, enabled: bool) -> Result<()> {
+    pub fn set_group_by_date(&mut self, list_id: Uuid, enabled: bool) -> Result<()> {
         let mut metadata = self.storage.read_list_metadata(list_id)?;
-        metadata.group_by_due_date = enabled;
+        metadata.group_by_date = enabled;
         metadata.updated_at = chrono::Utc::now();
         self.storage.write_list_metadata(&metadata)?;
         Ok(())
     }
 
-    pub fn get_group_by_due_date(&self, list_id: Uuid) -> Result<bool> {
+    pub fn get_group_by_date(&self, list_id: Uuid) -> Result<bool> {
         let metadata = self.storage.read_list_metadata(list_id)?;
-        Ok(metadata.group_by_due_date)
+        Ok(metadata.group_by_date)
     }
 }
 
@@ -214,19 +214,19 @@ mod tests {
     }
 
     #[test]
-    fn test_group_by_due_date() {
+    fn test_group_by_date() {
         let temp_dir = TempDir::new().unwrap();
         let mut repo = TaskRepository::init(temp_dir.path().to_path_buf()).unwrap();
 
         let list = repo.create_list("Test List".to_string()).unwrap();
 
-        assert!(!repo.get_group_by_due_date(list.id).unwrap());
+        assert!(!repo.get_group_by_date(list.id).unwrap());
 
-        repo.set_group_by_due_date(list.id, true).unwrap();
-        assert!(repo.get_group_by_due_date(list.id).unwrap());
+        repo.set_group_by_date(list.id, true).unwrap();
+        assert!(repo.get_group_by_date(list.id).unwrap());
 
-        repo.set_group_by_due_date(list.id, false).unwrap();
-        assert!(!repo.get_group_by_due_date(list.id).unwrap());
+        repo.set_group_by_date(list.id, false).unwrap();
+        assert!(!repo.get_group_by_date(list.id).unwrap());
     }
 
     // --- Error path tests ---

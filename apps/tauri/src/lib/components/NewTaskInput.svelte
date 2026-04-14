@@ -9,21 +9,21 @@
 
   let title = $state("");
   let description = $state("");
-  let dueDate = $state<string | null>(null);
-  let dueDateHasTime = $state(false);
+  let date = $state<string | null>(null);
+  let dateHasTime = $state(false);
   let inputEl = $state<HTMLInputElement | null>(null);
   let showDatePicker = $state(false);
 
   async function handleSubmit() {
     if (!title.trim()) return;
     const created = await app.createTask(title.trim(), description.trim() || undefined);
-    if (dueDate && created) {
-      await app.updateTask({ ...created, due_date: dueDate, has_time: dueDateHasTime });
+    if (date && created) {
+      await app.updateTask({ ...created, date: date, has_time: dateHasTime });
     }
     title = "";
     description = "";
-    dueDate = null;
-    dueDateHasTime = false;
+    date = null;
+    dateHasTime = false;
     newTaskState.open = false;
   }
 
@@ -31,14 +31,14 @@
     newTaskState.open = false;
     title = "";
     description = "";
-    dueDate = null;
-    dueDateHasTime = false;
+    date = null;
+    dateHasTime = false;
     showDatePicker = false;
   }
 
   function handleDateChange(iso: string | null, hasTime: boolean = false) {
-    dueDate = iso;
-    dueDateHasTime = hasTime;
+    date = iso;
+    dateHasTime = hasTime;
   }
 
   function formatDateChip(iso: string): string {
@@ -47,7 +47,7 @@
     const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     const day = dayNames[d.getDay()];
     const pad = (n: number) => String(n).padStart(2, "0");
-    const timePart = dueDateHasTime ? `, ${pad(d.getHours())}:${pad(d.getMinutes())}` : "";
+    const timePart = dateHasTime ? `, ${pad(d.getHours())}:${pad(d.getMinutes())}` : "";
     if (d.toDateString() === today.toDateString()) return `Today${timePart}`;
     return `${day}, ${pad(d.getDate())}/${pad(d.getMonth() + 1)}${timePart}`;
   }
@@ -102,12 +102,12 @@
       <svg class="h-5 w-5 shrink-0 opacity-40" viewBox="0 0 20 20" fill="currentColor">
         <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd" />
       </svg>
-      {#if dueDate}
+      {#if date}
         <div class="flex items-center gap-1.5 rounded-full border border-border-light bg-black/5 px-3 py-1 text-sm dark:border-border-dark dark:bg-white/10">
           <button type="button" onclick={() => (showDatePicker = true)} class="hover:opacity-70">
-            {formatDateChip(dueDate)}
+            {formatDateChip(date)}
           </button>
-          <button type="button" onclick={() => (dueDate = null)} class="opacity-40 hover:opacity-80">
+          <button type="button" onclick={() => (date = null)} class="opacity-40 hover:opacity-80">
             <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
               <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
             </svg>

@@ -62,7 +62,7 @@ pub struct ListMetadata {
     pub id: Uuid,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-    pub group_by_due_date: bool,
+    pub group_by_date: bool,
     pub task_order: Vec<Uuid>,
 }
 
@@ -73,7 +73,7 @@ impl ListMetadata {
             id,
             created_at: now,
             updated_at: now,
-            group_by_due_date: false,
+            group_by_date: false,
             task_order: Vec::new(),
         }
     }
@@ -88,7 +88,7 @@ pub struct TaskFrontmatter {
     pub id: Uuid,
     pub status: TaskStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub due: Option<DateTime<Utc>>,
+    pub date: Option<DateTime<Utc>>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub has_time: bool,
     #[serde(default = "default_version")]
@@ -360,7 +360,7 @@ impl Storage for FileSystemStorage {
                         title,
                         description,
                         status: frontmatter.status,
-                        due_date: frontmatter.due,
+                        date: frontmatter.date,
                         has_time: frontmatter.has_time,
                         version: frontmatter.version,
                         parent_id: frontmatter.parent,
@@ -456,7 +456,7 @@ impl Storage for FileSystemStorage {
                     title,
                     description,
                     status: frontmatter.status,
-                    due_date: frontmatter.due,
+                    date: frontmatter.date,
                     has_time: frontmatter.has_time,
                     version: frontmatter.version,
                     parent_id: frontmatter.parent,
@@ -547,7 +547,7 @@ impl Storage for FileSystemStorage {
             tasks: Vec::new(),
             created_at: list_metadata.created_at,
             updated_at: list_metadata.updated_at,
-            group_by_due_date: list_metadata.group_by_due_date,
+            group_by_date: list_metadata.group_by_date,
         };
 
         Ok(task_list)
@@ -582,7 +582,7 @@ impl Storage for FileSystemStorage {
                         tasks,
                         created_at: list_metadata.created_at,
                         updated_at: list_metadata.updated_at,
-                        group_by_due_date: list_metadata.group_by_due_date,
+                        group_by_date: list_metadata.group_by_date,
                     };
 
                     lists.push(task_list);
@@ -761,7 +761,7 @@ mod tests {
 
         let content = "---\nid: 550e8400-e29b-41d4-a716-446655440000\nstatus: backlog\ndue: 2026-06-15T12:00:00Z\nversion: 2\nparent: 660e8400-e29b-41d4-a716-446655440001\n---\n\nNotes";
         let (fm, _) = storage.parse_markdown_with_frontmatter(content).unwrap();
-        assert!(fm.due.is_some());
+        assert!(fm.date.is_some());
         assert!(fm.parent.is_some());
     }
 

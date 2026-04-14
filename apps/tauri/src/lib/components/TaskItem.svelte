@@ -150,18 +150,18 @@
       {#if task.description}
         <p class="mt-0.5 text-xs opacity-40 line-clamp-1">{task.description}</p>
       {/if}
-      {#if task.due_date && dateChipStyle !== "hidden"}
+      {#if task.date && dateChipStyle !== "hidden"}
         {#if dateChipStyle === "overdue"}
           <span class="mt-1 inline-block rounded-full border border-danger px-2 py-0.5 text-xs text-danger opacity-80">
-            {formatDate(task.due_date)}
+            {formatDate(task.date)}
           </span>
         {:else}
           <span class="mt-1 inline-block rounded-full border border-border-light px-2 py-0.5 text-xs opacity-50 dark:border-border-dark">
-            {formatDate(task.due_date)}
+            {formatDate(task.date)}
           </span>
         {/if}
       {/if}
-      {#if subtaskCount > 0}
+      {#if subtaskCount > 0 && showSubtaskCount}
         <span class="mt-1 inline-flex items-center gap-1 text-xs opacity-40" aria-label="{subtasks.filter(s => s.status === 'completed').length} of {subtaskCount} subtasks completed">
           <svg class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
             <path fill-rule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm2 4a1 1 0 011-1h10a1 1 0 110 2H6a1 1 0 01-1-1zm2 4a1 1 0 011-1h8a1 1 0 110 2H8a1 1 0 01-1-1z" />

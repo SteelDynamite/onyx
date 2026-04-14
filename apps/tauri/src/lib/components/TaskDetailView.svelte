@@ -48,7 +48,7 @@
   }
 
   function handleDateChange(iso: string | null, hasTime: boolean = false) {
-    app.updateTask({ ...task, due_date: iso, has_time: hasTime });
+    app.updateTask({ ...task, date: iso, has_time: hasTime });
   }
 
   async function handleToggle() {
@@ -237,10 +237,10 @@
     <svg class="h-5 w-5 shrink-0 opacity-40" viewBox="0 0 20 20" fill="currentColor">
       <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd" />
     </svg>
-    {#if task.due_date}
+    {#if task.date}
       <div class="flex items-center gap-1.5 rounded-full border border-border-light bg-black/5 px-3 py-1 text-sm dark:border-border-dark dark:bg-white/10">
         <button onclick={() => (showDatePicker = true)} class="hover:opacity-70">
-          {formatDateChip(task.due_date)}
+          {formatDateChip(task.date)}
         </button>
         <button onclick={() => handleDateChange(null)} class="opacity-40 hover:opacity-80">
           <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
@@ -388,7 +388,7 @@
 <!-- Date picker overlay -->
 {#if showDatePicker}
   <DateTimePicker
-    value={task.due_date}
+    value={task.date}
     has_time={task.has_time}
     onchange={handleDateChange}
     onclose={() => (showDatePicker = false)}

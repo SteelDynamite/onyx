@@ -5,7 +5,7 @@ use uuid::Uuid;
 use crate::output;
 use crate::commands::get_repository;
 
-pub fn add(title: String, list_name: Option<String>, due_str: Option<String>, workspace: Option<String>) -> Result<()> {
+pub fn add(title: String, list_name: Option<String>, date_str: Option<String>, workspace: Option<String>) -> Result<()> {
     let (mut repo, _workspace_name) = get_repository(workspace)?;
 
     // Get lists
@@ -29,18 +29,18 @@ pub fn add(title: String, list_name: Option<String>, due_str: Option<String>, wo
     // Create task
     let mut task = Task::new(title.clone());
 
-    // Parse due date if provided
-    if let Some(due_str) = due_str {
-        let due_date = parse_due_date(&due_str)?;
-        task.due_date = Some(due_date);
+    // Parse date if provided
+    if let Some(due_str) = date_str {
+        let date = parse_date(&due_str)?;
+        task.date = Some(date);
     }
 
     // Save task
     repo.create_task(list.id, task.clone())
         .context("Failed to create task")?;
 
-    let due_info = if let Some(due) = task.due_date {
-        format!("\n  Due: {}", due.format("%Y-%m-%d"))
+    let due_info = if let Some(due) = task.date {
+        format!("\n  Date: {}", due.format("%Y-%m-%d"))
     } else {
         String::new()
     };
@@ -204,7 +204,7 @@ pub fn edit(task_id_str: String, workspace: Option<String>) -> Result<()> {
     Ok(())
 }
 
-fn parse_due_date(s: &str) -> Result<DateTime<Utc>> {
+fn parse_date(s: &str) -> Result<DateTime<Utc>> {
     // Try parsing as date only (YYYY-MM-DD)
     if let Ok(naive_date) = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d") {
         let naive_datetime = naive_date.and_hms_opt(0, 0, 0)

@@ -16,7 +16,7 @@ pub struct Task {
     pub description: String,
     pub status: TaskStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub due_date: Option<DateTime<Utc>>,
+    pub date: Option<DateTime<Utc>>,
     #[serde(default)]
     pub has_time: bool,
     pub version: u64,
@@ -31,7 +31,7 @@ impl Task {
             title,
             description: String::new(),
             status: TaskStatus::Backlog,
-            due_date: None,
+            date: None,
             has_time: false,
             version: 0,
             parent_id: None,
@@ -43,8 +43,8 @@ impl Task {
         self
     }
 
-    pub fn with_due_date(mut self, due_date: DateTime<Utc>) -> Self {
-        self.due_date = Some(due_date);
+    pub fn with_date(mut self, date: DateTime<Utc>) -> Self {
+        self.date = Some(date);
         self
     }
 
@@ -69,7 +69,7 @@ pub struct TaskList {
     pub tasks: Vec<Task>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-    pub group_by_due_date: bool,
+    pub group_by_date: bool,
 }
 
 impl TaskList {
@@ -81,7 +81,7 @@ impl TaskList {
             tasks: Vec::new(),
             created_at: now,
             updated_at: now,
-            group_by_due_date: false,
+            group_by_date: false,
         }
     }
 
@@ -152,7 +152,7 @@ mod tests {
         assert_eq!(task.title, "My Task");
         assert_eq!(task.description, "");
         assert_eq!(task.status, TaskStatus::Backlog);
-        assert!(task.due_date.is_none());
+        assert!(task.date.is_none());
         assert!(!task.has_time);
         assert_eq!(task.version, 0);
         assert!(task.parent_id.is_none());
@@ -197,12 +197,12 @@ mod tests {
         let dt = Utc::now();
         let task = Task::new("Chained".to_string())
             .with_description("Desc".to_string())
-            .with_due_date(dt)
+            .with_date(dt)
             .with_parent(parent_id);
 
         assert_eq!(task.title, "Chained");
         assert_eq!(task.description, "Desc");
-        assert_eq!(task.due_date, Some(dt));
+        assert_eq!(task.date, Some(dt));
         assert_eq!(task.parent_id, Some(parent_id));
     }
 
@@ -231,7 +231,7 @@ mod tests {
     fn test_task_serde_skips_none_fields() {
         let task = Task::new("Minimal".to_string());
         let json = serde_json::to_string(&task).unwrap();
-        assert!(!json.contains("due_date"));
+        assert!(!json.contains("\"date\""));
         assert!(!json.contains("parent_id"));
     }
 
