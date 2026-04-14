@@ -6,7 +6,7 @@
   import type { Task } from "../types";
   import { app } from "../stores/app.svelte";
 
-  let { task, onopen, depth = 0 }: { task: Task; onopen?: (task: Task) => void; depth?: number } = $props();
+  let { task, onopen, depth = 0, dateChipStyle = "normal", showSubtaskCount = true }: { task: Task; onopen?: (task: Task) => void; depth?: number; dateChipStyle?: "normal" | "overdue" | "hidden"; showSubtaskCount?: boolean } = $props();
 
   let subtasks = $derived(app.getSubtasks(task.id));
   let subtaskCount = $derived(subtasks.length);
@@ -150,10 +150,16 @@
       {#if task.description}
         <p class="mt-0.5 text-xs opacity-40 line-clamp-1">{task.description}</p>
       {/if}
-      {#if task.due_date}
-        <span class="mt-1 inline-block rounded-full border border-border-light px-2 py-0.5 text-xs opacity-50 dark:border-border-dark">
-          {formatDate(task.due_date)}
-        </span>
+      {#if task.due_date && dateChipStyle !== "hidden"}
+        {#if dateChipStyle === "overdue"}
+          <span class="mt-1 inline-block rounded-full border border-danger px-2 py-0.5 text-xs text-danger opacity-80">
+            {formatDate(task.due_date)}
+          </span>
+        {:else}
+          <span class="mt-1 inline-block rounded-full border border-border-light px-2 py-0.5 text-xs opacity-50 dark:border-border-dark">
+            {formatDate(task.due_date)}
+          </span>
+        {/if}
       {/if}
       {#if subtaskCount > 0}
         <span class="mt-1 inline-flex items-center gap-1 text-xs opacity-40" aria-label="{subtasks.filter(s => s.status === 'completed').length} of {subtaskCount} subtasks completed">
