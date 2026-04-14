@@ -1,7 +1,10 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
+  import { platform } from "@tauri-apps/plugin-os";
   import { app } from "../stores/app.svelte";
   import ConfirmDialog from "../components/ConfirmDialog.svelte";
+
+  const isLinux = platform() === "linux";
 
   let { onclose, workspaceId, ondelete }: { onclose?: () => void; workspaceId: string; ondelete?: (id: string) => void } = $props();
 
@@ -263,6 +266,24 @@
       <option value="ink">Ink</option>
     </select>
   </section>
+
+  {#if isLinux}
+    <!-- Window decorations (Linux only) -->
+    <section class="mt-6">
+      <label class="flex cursor-pointer items-center justify-between gap-3">
+        <div>
+          <p class="text-sm font-medium">System window decorations</p>
+          <p class="text-xs opacity-50">Use the system title bar instead of the custom border</p>
+        </div>
+        <input
+          type="checkbox"
+          checked={app.systemDecorations}
+          onchange={(e) => app.setSystemDecorations((e.target as HTMLInputElement).checked)}
+          class="h-4 w-4 cursor-pointer accent-primary"
+        />
+      </label>
+    </section>
+  {/if}
 
   <p class="mt-8 text-center text-xs opacity-30">Tauri v2 + Svelte</p>
 </main>

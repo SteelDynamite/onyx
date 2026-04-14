@@ -14,11 +14,11 @@
 </script>
 
 <div class={app.isDark ? "dark" : ""} data-theme={app.currentTheme ?? ""}>
-  <div class="h-screen w-screen" class:p-2={isLinux}>
+  <div class="h-screen w-screen" class:p-2={isLinux && !app.systemDecorations}>
     <div
       class="relative h-full w-full overflow-hidden bg-surface-light text-text-light dark:bg-surface-dark dark:text-text-dark"
-      class:rounded-xl={isLinux}
-      class:linux-window-border={isLinux}
+      class:rounded-xl={isLinux && !app.systemDecorations}
+      class:linux-window-border={isLinux && !app.systemDecorations}
       style="container-type: inline-size"
     >
       {#if app.error}

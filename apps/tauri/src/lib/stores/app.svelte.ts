@@ -18,6 +18,10 @@ listen("fs-changed", () => {
 
 // ── Reactive state ───────────────────────────────────────────────────
 
+const LS_DECORATIONS_KEY = "systemDecorations";
+let systemDecorations = $state(localStorage.getItem(LS_DECORATIONS_KEY) === "true");
+if (systemDecorations) getCurrentWindow().setDecorations(true);
+
 let screen = $state<Screen>("setup");
 let config = $state<AppConfig | null>(null);
 let lists = $state<TaskList[]>([]);
@@ -429,6 +433,12 @@ async function setSyncIntervalUnfocused(secs: number | null) {
   }
 }
 
+function setSystemDecorations(value: boolean) {
+  systemDecorations = value;
+  localStorage.setItem(LS_DECORATIONS_KEY, String(value));
+  getCurrentWindow().setDecorations(value);
+}
+
 async function setTheme(theme: string | null) {
   if (!config?.current_workspace) return;
   try {
@@ -549,6 +559,9 @@ export const app = {
   get lastSyncResult() {
     return lastSyncResult;
   },
+  get systemDecorations() {
+    return systemDecorations;
+  },
   get error() {
     return error;
   },
@@ -582,6 +595,7 @@ export const app = {
   stopAutoSync,
   setSyncInterval,
   setSyncIntervalUnfocused,
+  setSystemDecorations,
   setTheme,
   addWebdavWorkspace,
   forgetMissingWorkspace,
