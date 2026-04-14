@@ -62,11 +62,13 @@
   let renameValue = $state("");
   let showListMenu = $state(false);
   let listMenuEl = $state<HTMLDivElement | null>(null);
+  let showSubtasks = $state(false);
   let confirmDeleteList = $state(false);
   let confirmDeleteCompleted = $state(false);
   let confirmRemoveWorkspace = $state<string | null>(null);
   let dragId = $state<string | null>(null);
   let dragOverId = $state<string | null>(null);
+  let dragGroup = $state<string | null>(null);
   let resizing = $state(false);
   let resizeTimer: ReturnType<typeof setTimeout>;
 
@@ -145,8 +147,9 @@
     if (showWorkspacePicker) { showWorkspacePicker = false; return; }
   }
 
-  function handleDragStart(e: DragEvent, taskId: string) {
+  function handleDragStart(e: DragEvent, taskId: string, group?: string) {
     dragId = taskId;
+    dragGroup = group ?? null;
     if (e.dataTransfer) {
       e.dataTransfer.effectAllowed = "move";
       e.dataTransfer.setData("text/plain", taskId);
@@ -173,7 +176,8 @@
     }
   }
 
-  function handleDragOver(e: DragEvent, taskId: string) {
+  function handleDragOver(e: DragEvent, taskId: string, group?: string) {
+    if (group === "Overdue" && dragGroup !== "Overdue") return;
     e.preventDefault();
     if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
     dragOverId = taskId;
@@ -182,13 +186,35 @@
   function handleDragEnd() {
     dragId = null;
     dragOverId = null;
+    dragGroup = null;
   }
 
-  async function handleDrop(e: DragEvent, targetId: string) {
+  async function handleDrop(e: DragEvent, targetId: string, group?: string) {
     e.preventDefault();
-    if (!dragId || dragId === targetId) { handleDragEnd(); return; }
+    const taskId = dragId;
+    const sourceGroup = dragGroup;
+    if (!taskId || taskId === targetId) { handleDragEnd(); return; }
+    if (group === "Overdue" && sourceGroup !== "Overdue") { handleDragEnd(); return; }
+
+    if (group !== undefined && group !== sourceGroup) {
+      const targetGroup = app.groupedPendingTasks?.find((g) => g.label === group);
+      const task = app.pendingTasks.find((t) => t.id === taskId);
+      if (task && targetGroup !== undefined) {
+        let newDueDate: string | null = null;
+        if (targetGroup.date !== null) {
+          const target = new Date(targetGroup.date);
+          if (task.has_time && task.due_date) {
+            const existing = new Date(task.due_date);
+            target.setHours(existing.getHours(), existing.getMinutes(), existing.getSeconds(), 0);
+          }
+          newDueDate = target.toISOString();
+        }
+        await app.updateTask({ ...task, due_date: newDueDate, has_time: newDueDate ? task.has_time : false });
+      }
+    }
+
     const targetIndex = app.pendingTasks.findIndex((t) => t.id === targetId);
-    if (targetIndex >= 0) await app.reorderTask(dragId, targetIndex);
+    if (targetIndex >= 0) await app.reorderTask(taskId, targetIndex);
     handleDragEnd();
   }
 
@@ -535,15 +561,17 @@
                       Delete completed
                     </button>
                   {/if}
-                  <button
-                    onclick={promptDeleteList}
-                    class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-danger hover:bg-black/5 dark:hover:bg-white/10"
-                  >
-                    <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                      <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
-                    </svg>
-                    Delete list
-                  </button>
+                  {#if !app.isGoogleTasks}
+                    <button
+                      onclick={promptDeleteList}
+                      class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-danger hover:bg-black/5 dark:hover:bg-white/10"
+                    >
+                      <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
+                      </svg>
+                      Delete list
+                    </button>
+                  {/if}
                 </div>
               {/if}
             </div>
@@ -575,22 +603,53 @@
               Select a list
             </div>
           {:else}
-            {#each app.pendingTasks as task (task.id)}
-              <!-- svelte-ignore a11y_no_static_element_interactions -->
-              <div
-                draggable="true"
-                ondragstart={(e) => handleDragStart(e, task.id)}
-                ondragover={(e) => handleDragOver(e, task.id)}
-                ondragend={handleDragEnd}
-                ondrop={(e) => handleDrop(e, task.id)}
-                class="{dragId === task.id ? 'opacity-30' : ''} {dragOverId === task.id && dragId !== task.id ? 'border-t-2 border-t-primary' : ''}"
-              >
-                <TaskItem {task} onopen={openTask} />
-              </div>
-            {/each}
-
-            {#if app.pendingTasks.length === 0}
-              <div class="p-8 text-center text-sm opacity-40">No tasks. Add one below.</div>
+            {#if app.groupedPendingTasks}
+              {#each app.groupedPendingTasks as group (group.label)}
+                <div class="px-4 pb-1 pt-4 text-xs font-semibold uppercase tracking-wider opacity-40">{group.label}</div>
+                {#each group.tasks as task (task.id)}
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <div
+                    draggable="true"
+                    ondragstart={(e) => handleDragStart(e, task.id, group.label)}
+                    ondragover={(e) => handleDragOver(e, task.id, group.label)}
+                    ondragend={handleDragEnd}
+                    ondrop={(e) => handleDrop(e, task.id, group.label)}
+                    class="{dragId === task.id ? 'opacity-30' : ''} {dragOverId === task.id && dragId !== task.id ? 'border-t-2 border-t-primary' : ''}"
+                  >
+                    <TaskItem {task} onopen={openTask} dateChipStyle={group.label === "Overdue" ? "overdue" : "hidden"} showSubtaskCount={!showSubtasks} />
+                  </div>
+                  {#if showSubtasks}
+                    {#each app.getSubtasks(task.id).filter(s => s.status === "backlog") as subtask (subtask.id)}
+                      <TaskItem task={subtask} onopen={openTask} depth={1} dateChipStyle="hidden" />
+                    {/each}
+                  {/if}
+                {/each}
+              {/each}
+              {#if app.pendingTasks.length === 0}
+                <div class="p-8 text-center text-sm opacity-40">No tasks. Add one below.</div>
+              {/if}
+            {:else}
+              {#each app.pendingTasks as task (task.id)}
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <div
+                  draggable="true"
+                  ondragstart={(e) => handleDragStart(e, task.id)}
+                  ondragover={(e) => handleDragOver(e, task.id)}
+                  ondragend={handleDragEnd}
+                  ondrop={(e) => handleDrop(e, task.id)}
+                  class="{dragId === task.id ? 'opacity-30' : ''} {dragOverId === task.id && dragId !== task.id ? 'border-t-2 border-t-primary' : ''}"
+                >
+                  <TaskItem {task} onopen={openTask} showSubtaskCount={!showSubtasks} />
+                </div>
+                {#if showSubtasks}
+                  {#each app.getSubtasks(task.id).filter(s => s.status === "backlog") as subtask (subtask.id)}
+                    <TaskItem task={subtask} onopen={openTask} depth={1} />
+                  {/each}
+                {/if}
+              {/each}
+              {#if app.pendingTasks.length === 0}
+                <div class="p-8 text-center text-sm opacity-40">No tasks. Add one below.</div>
+              {/if}
             {/if}
 
             {#if app.completedTasks.length > 0}

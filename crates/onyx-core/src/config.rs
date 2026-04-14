@@ -9,6 +9,7 @@ use crate::error::{Error, Result};
 pub enum WorkspaceMode {
     Local,
     Webdav,
+    GoogleTasks,
 }
 
 impl Default for WorkspaceMode {
@@ -27,6 +28,9 @@ pub struct WorkspaceConfig {
     pub webdav_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub webdav_path: Option<String>,
+    /// Display name / email of the connected Google account (GoogleTasks workspaces only).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub google_account: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub last_sync: Option<chrono::DateTime<chrono::Utc>>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
@@ -39,7 +43,7 @@ pub struct WorkspaceConfig {
 
 impl WorkspaceConfig {
     pub fn new(name: String, path: PathBuf) -> Self {
-        Self { name, path, mode: WorkspaceMode::Local, webdav_url: None, webdav_path: None, last_sync: None, theme: None, sync_interval_secs: None, sync_interval_unfocused_secs: None }
+        Self { name, path, mode: WorkspaceMode::Local, webdav_url: None, webdav_path: None, google_account: None, last_sync: None, theme: None, sync_interval_secs: None, sync_interval_unfocused_secs: None }
     }
 }
 
