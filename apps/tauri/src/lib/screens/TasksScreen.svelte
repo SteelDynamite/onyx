@@ -118,12 +118,12 @@
     renamingListId = null;
   }
 
-  async function handleToggleGroupByDueDate() {
+  async function handleToggleGroupByDate() {
     showListMenu = false;
     if (!app.activeListId) return;
     var list = app.lists.find(l => l.id === app.activeListId);
     if (!list) return;
-    await app.setGroupByDueDate(app.activeListId, !list.group_by_due_date);
+    await app.setGroupByDate(app.activeListId, !list.group_by_date);
   }
 
   function handleKeydown(e: KeyboardEvent) {
@@ -188,16 +188,16 @@
       const targetGroup = app.groupedPendingTasks?.find((g) => g.label === group);
       const task = app.pendingTasks.find((t) => t.id === taskId);
       if (task && targetGroup !== undefined) {
-        let newDueDate: string | null = null;
+        let newDate: string | null = null;
         if (targetGroup.date !== null) {
           const target = new Date(targetGroup.date);
-          if (task.has_time && task.due_date) {
-            const existing = new Date(task.due_date);
+          if (task.has_time && task.date) {
+            const existing = new Date(task.date);
             target.setHours(existing.getHours(), existing.getMinutes(), existing.getSeconds(), 0);
           }
-          newDueDate = target.toISOString();
+          newDate = target.toISOString();
         }
-        await app.updateTask({ ...task, due_date: newDueDate, has_time: newDueDate ? task.has_time : false });
+        await app.updateTask({ ...task, date: newDate, has_time: newDate ? task.has_time : false });
       }
     }
 
@@ -554,21 +554,21 @@
                     </button>
                   {/if}
                   <button
-                    onclick={handleToggleGroupByDueDate}
+                    onclick={handleToggleGroupByDate}
                     class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"
                   >
                     <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
                       <path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd" />
                     </svg>
-                    Group by due date
-                    {#if app.activeList?.group_by_due_date}
+                    Group by date
+                    {#if app.activeList?.group_by_date}
                       <svg class="ml-auto h-4 w-4 text-primary" viewBox="0 0 20 20" fill="currentColor">
                         <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" />
                       </svg>
                     {/if}
                   </button>
                   <button
-                    onclick={() => (showSubtasks = !showSubtasks)}
+                    onclick={() => { showSubtasks = !showSubtasks; showListMenu = false; }}
                     class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"
                   >
                     <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">

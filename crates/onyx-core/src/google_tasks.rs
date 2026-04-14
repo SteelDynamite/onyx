@@ -310,8 +310,8 @@ pub async fn sync_google_tasks(
                 TaskStatus::Backlog
             };
 
-            // Google Tasks due dates are date-only (time is always T00:00:00Z).
-            let due_date = gt_task.due.as_deref()
+            // Google Tasks dates are date-only (time is always T00:00:00Z).
+            let date = gt_task.due.as_deref()
                 .and_then(|s| s.parse::<DateTime<Utc>>().ok());
 
             let parent_id = gt_task.parent.as_deref().map(gt_id_to_uuid);
@@ -321,7 +321,7 @@ pub async fn sync_google_tasks(
                 title: gt_task.title.clone(),
                 description: gt_task.notes.clone(),
                 status,
-                due_date,
+                date,
                 has_time: false,
                 version: 1,
                 parent_id,
@@ -441,7 +441,7 @@ fn render_task_markdown(task: &Task) -> String {
         TaskStatus::Completed => "completed",
     };
     let mut yaml = format!("id: {}\nstatus: {}\nversion: 1\n", task.id, status_str);
-    if let Some(due) = task.due_date {
+    if let Some(due) = task.date {
         yaml.push_str(&format!("due: {}\n", due.to_rfc3339()));
     }
     if let Some(parent) = task.parent_id {

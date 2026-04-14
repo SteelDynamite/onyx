@@ -95,6 +95,7 @@ let groupedPendingTasks = $derived.by((): TaskGroup[] | null => {
   tomorrow.sort(sortByDue);
 
   const groups: TaskGroup[] = [];
+  if (noDate.length) groups.push({ label: "No Date", tasks: noDate, date: null });
   if (overdue.length) groups.push({ label: "Overdue", tasks: overdue, date: null });
   if (today.length) groups.push({ label: "Today", tasks: today, date: todayStart });
   if (tomorrow.length) groups.push({ label: "Tomorrow", tasks: tomorrow, date: tomorrowStart });
@@ -108,7 +109,6 @@ let groupedPendingTasks = $derived.by((): TaskGroup[] | null => {
     groups.push({ label: date.toLocaleDateString(undefined, opts), tasks, date });
   }
 
-  if (noDate.length) groups.push({ label: "No Date", tasks: noDate, date: null });
   return groups;
 });
 

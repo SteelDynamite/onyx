@@ -248,13 +248,25 @@ body {
   border-color: rgba(0, 0, 0, 0.5);
 }
 
-/* ── Dropdown/kebab menu shadow ──────────────────────────────────── */
+/* ── Dropdown/kebab menu shadow + open/close animation ───────────── */
 
 .menu-shadow {
   box-shadow: 0 4px 10px 0 rgba(0, 0, 0, 0.12);
 }
 .dark .menu-shadow {
   box-shadow: 0 4px 10px 0 rgba(0, 0, 0, 0.3);
+}
+
+.dropdown-menu {
+  transition: opacity 120ms ease, transform 120ms ease, display 120ms ease allow-discrete;
+  transform-origin: top right;
+  opacity: 1;
+  transform: scale(1);
+
+  @starting-style {
+    opacity: 0;
+    transform: scale(0.92);
+  }
 }
 
 /* ── Borderless mode: square corners on all popups/overlays ─────── */
