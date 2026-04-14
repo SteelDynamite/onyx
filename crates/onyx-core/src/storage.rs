@@ -102,7 +102,7 @@ impl From<&Task> for TaskFrontmatter {
         Self {
             id: task.id,
             status: task.status,
-            due: task.date,
+            date: task.date,
             has_time: task.has_time,
             version: task.version,
             parent: task.parent_id,

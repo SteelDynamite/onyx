@@ -442,7 +442,7 @@ fn render_task_markdown(task: &Task) -> String {
     };
     let mut yaml = format!("id: {}\nstatus: {}\nversion: 1\n", task.id, status_str);
     if let Some(due) = task.date {
-        yaml.push_str(&format!("due: {}\n", due.to_rfc3339()));
+        yaml.push_str(&format!("date: {}\n", due.to_rfc3339()));
     }
     if let Some(parent) = task.parent_id {
         yaml.push_str(&format!("parent: {}\n", parent));
