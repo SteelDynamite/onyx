@@ -18,8 +18,8 @@ pub struct Task {
     pub title: String,
     pub description: String,
     pub status: TaskStatus,
-    pub due_date: Option<DateTime<Utc>>,
-    pub has_time: bool,            // Whether due_date includes a specific time
+    pub date: Option<DateTime<Utc>>,
+    pub has_time: bool,            // Whether date includes a specific time
     pub version: u64,              // Increments (saturating) on every write; used for sync dedup
     pub parent_id: Option<Uuid>,
 }
@@ -38,10 +38,10 @@ use onyx_core::Task;
 // Simple task
 let task = Task::new("Buy groceries".to_string());
 
-// Task with description and due date
+// Task with description and date
 let task = Task::new("Review PR #123".to_string())
     .with_description("Check the authentication changes".to_string())
-    .with_due_date(chrono::Utc::now() + chrono::Duration::days(2));
+    .with_date(chrono::Utc::now() + chrono::Duration::days(2));
 ```
 
 #### TaskList
@@ -55,7 +55,7 @@ pub struct TaskList {
     pub tasks: Vec<Task>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-    pub group_by_due_date: bool,
+    pub group_by_date: bool,
 }
 ```
 
@@ -108,15 +108,23 @@ config.save_to_file(&config_path)?;
 Configuration for a single workspace.
 
 ```rust
+pub enum WorkspaceMode {
+    Local,
+    Webdav,
+    GoogleTasks,
+}
+
 pub struct WorkspaceConfig {
-    pub name: String,                          // Display name
+    pub name: String,                                  // Display name
     pub path: PathBuf,
-    pub mode: WorkspaceMode,                   // Local or Webdav
+    pub mode: WorkspaceMode,                           // Local, Webdav, or GoogleTasks
     pub webdav_url: Option<String>,
-    pub webdav_path: Option<String>,           // User-selected remote folder path
+    pub webdav_path: Option<String>,                   // User-selected remote folder path
+    pub google_account: Option<String>,                // Email/display name (GoogleTasks workspaces)
     pub last_sync: Option<DateTime<Utc>>,
     pub theme: Option<String>,
-    pub sync_interval_secs: Option<u64>,       // Auto-sync polling interval
+    pub sync_interval_secs: Option<u64>,               // Auto-sync polling interval (focused)
+    pub sync_interval_unfocused_secs: Option<u64>,     // Auto-sync interval when unfocused
 }
 ```
 
@@ -217,17 +225,17 @@ let order = repo.get_task_order(list_id)?;
 
 ### Grouping
 
-#### Enable/Disable Group by Due Date
+#### Enable/Disable Group by Date
 
 ```rust
 // Enable grouping
-repo.set_group_by_due_date(list_id, true)?;
+repo.set_group_by_date(list_id, true)?;
 
 // Disable grouping
-repo.set_group_by_due_date(list_id, false)?;
+repo.set_group_by_date(list_id, false)?;
 
 // Check current setting
-let is_grouped = repo.get_group_by_due_date(list_id)?;
+let is_grouped = repo.get_group_by_date(list_id)?;
 ```
 
 ## File Format
@@ -241,7 +249,8 @@ Tasks are stored as `.md` files with YAML frontmatter:
 id: 550e8400-e29b-41d4-a716-446655440000
 status: backlog
 version: 3
-due: 2026-11-15T14:00:00Z
+date: 2026-11-15T14:00:00Z
+has_time: true
 parent: 550e8400-e29b-41d4-a716-446655440001
 ---
 
@@ -263,7 +272,7 @@ Each list folder contains a `.listdata.json` file:
   "id": "list-uuid-1",
   "created_at": "2026-10-26T10:00:00Z",
   "updated_at": "2026-10-27T14:30:00Z",
-  "group_by_due_date": false,
+  "group_by_date": false,
   "task_order": [
     "task-uuid-1",
     "task-uuid-2",
@@ -453,7 +462,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let task1 = repo.create_task(list.id, task1)?;
 
     let task2 = Task::new("Call dentist".to_string())
-        .with_due_date(chrono::Utc::now() + chrono::Duration::days(1));
+        .with_date(chrono::Utc::now() + chrono::Duration::days(1));
     let task2 = repo.create_task(list.id, task2)?;
 
     // List all tasks

@@ -45,7 +45,8 @@ onyx/
 │   │   │   ├── repository.rs           # Repository pattern (TaskRepository)
 │   │   │   ├── error.rs                # Error types
 │   │   │   ├── sync.rs                 # Three-way sync engine with offline queue
-│   │   │   └── webdav.rs               # WebDAV client and credential storage
+│   │   │   ├── webdav.rs               # WebDAV client and credential storage
+│   │   │   └── google_tasks.rs         # Google Tasks API client (read-only sync)
 │   │   └── Cargo.toml
 │   ├── onyx-cli/                 # CLI application
 │   │   ├── src/
