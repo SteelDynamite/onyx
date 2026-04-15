@@ -46,7 +46,7 @@ onyx/
 - Workspace management (init, add, list, switch, remove, retarget, migrate)
 - Task list management (create, show, delete)
 - Task operations (add, complete, delete, edit)
-- Group-by-due-date toggle
+- Group-by-date toggle
 - WebDAV sync (setup, push, pull, status)
 
 ### GUI (`apps/tauri/`)
@@ -59,7 +59,7 @@ onyx/
 - Due date picker/editor with optional time
 - Subtask hierarchy with three-panel slide navigation
 - Move tasks between lists
-- List rename, group-by-due-date toggle, delete completed tasks
+- List rename, group-by-date toggle, delete completed tasks
 - Keyboard shortcuts (Escape priority chain)
 - WebDAV setup flow with credential auto-population
 - File watcher (auto-reloads on external changes)

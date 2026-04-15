@@ -335,7 +335,7 @@ let status = get_sync_status(Path::new("/home/user/tasks"))?;
 
 Credentials are stored in the platform keychain (Windows Credential Manager, macOS Keychain, Linux Secret Service).
 
-**Core library** (`onyx-core::webdav`): Keyring service keys use the format `com.onyx.webdav.<domain>::<username>` — the `::` separator prevents key collisions when usernames contain dots. On first load, credentials stored in the legacy `.`-separated format are automatically migrated.
+**Core library** (`onyx-core::webdav`): The username is stored under service key `com.onyx.webdav.<domain>` and the password under `com.onyx.webdav.<domain>::<username>` — the `::` separator scopes the password per-username and prevents collisions when usernames contain dots. On first load, credentials stored in the legacy unscoped format (password stored without the username suffix) are automatically migrated to the scoped format.
 
 ```rust
 use onyx_core::webdav::{store_credentials, load_credentials, delete_credentials};
@@ -343,7 +343,7 @@ use onyx_core::webdav::{store_credentials, load_credentials, delete_credentials}
 // Store credentials
 store_credentials("nextcloud.example.com", "username", "password")?;
 
-// Load credentials
+// Load credentials (returns Zeroizing<String> wrappers that wipe memory on drop)
 let (username, password) = load_credentials("nextcloud.example.com")?;
 
 // Delete credentials
