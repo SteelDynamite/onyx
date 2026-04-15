@@ -664,16 +664,23 @@ apps/tauri/
 │       ├── components/
 │       │   ├── TaskItem.svelte
 │       │   ├── NewTaskInput.svelte
-│       │   └── ListSelector.svelte
+│       │   ├── TaskDetailView.svelte
+│       │   ├── BottomSheet.svelte
+│       │   ├── ConfirmDialog.svelte
+│       │   └── DateTimePicker.svelte
 │       └── stores/
-│           └── app.ts
+│           └── app.svelte.ts
+├── tauri-plugin-credentials/     # Cross-platform credential storage plugin
+│   ├── Cargo.toml
+│   ├── src/
+│   │   └── lib.rs                # Desktop (keyring) + plugin API
+│   └── android/                  # Android (EncryptedSharedPreferences)
 └── src-tauri/                    # Rust backend (Tauri commands)
     ├── Cargo.toml
     ├── tauri.conf.json
     └── src/
         ├── main.rs
-        ├── commands.rs           # Tauri command handlers
-        └── lib.rs
+        └── lib.rs                # Tauri command handlers
 ```
 
 #### First Run Experience
@@ -742,7 +749,7 @@ WorkspaceConfig {
 - [x] Delete tasks (kebab menu → delete)
 - [x] Mark tasks complete/incomplete with animated transitions
 - [x] Drag-and-drop task reordering
-- [x] Sliding lists drawer (80vw, left side)
+- [x] Sliding lists drawer (80cqi wide, left side)
 - [x] Settings popup overlay (WebDAV config, dark mode toggle)
 - [x] Dark mode (GNOME-style neutral theme, cyan-blue accent)
 - [x] Animated completed section show/hide
