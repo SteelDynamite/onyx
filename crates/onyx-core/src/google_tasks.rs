@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use crate::error::{Error, Result};
 use crate::models::{Task, TaskStatus};
-use crate::storage::{ListMetadata, RootMetadata};
+use crate::storage::{ListMetadata, RootMetadata, atomic_write};
 
 const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
@@ -348,7 +348,7 @@ pub async fn sync_google_tasks(
             };
 
             let content = render_task_markdown(&task);
-            if let Err(e) = atomic_write_bytes(&task_path, content.as_bytes()) {
+            if let Err(e) = atomic_write(&task_path, content.as_bytes()) {
                 errors.push(format!("Failed to write task '{}': {}", task.title, e));
             } else {
                 downloaded += 1;
@@ -359,7 +359,7 @@ pub async fn sync_google_tasks(
         list_meta.updated_at = Utc::now();
 
         if let Ok(meta_content) = serde_json::to_string_pretty(&list_meta) {
-            let _ = atomic_write_bytes(&listdata_path, meta_content.as_bytes());
+            let _ = atomic_write(&listdata_path, meta_content.as_bytes());
         }
     }
 
@@ -375,7 +375,7 @@ pub async fn sync_google_tasks(
     };
     root_meta.list_order = new_list_order;
     if let Ok(meta_content) = serde_json::to_string_pretty(&root_meta) {
-        let _ = atomic_write_bytes(&root_meta_path, meta_content.as_bytes());
+        let _ = atomic_write(&root_meta_path, meta_content.as_bytes());
     }
 
     Ok(GoogleSyncResult { downloaded, errors })
@@ -464,13 +464,3 @@ fn sanitize_name(name: &str) -> String {
     if s.is_empty() { "Untitled".to_string() } else { s }
 }
 
-/// Write bytes to a file atomically (write to `.tmp`, then rename).
-fn atomic_write_bytes(path: &Path, content: &[u8]) -> std::io::Result<()> {
-    let temp = path.with_extension("tmp");
-    std::fs::write(&temp, content)?;
-    if let Err(e) = std::fs::rename(&temp, path) {
-        let _ = std::fs::remove_file(&temp);
-        return Err(e);
-    }
-    Ok(())
-}
