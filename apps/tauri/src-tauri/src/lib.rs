@@ -549,9 +549,9 @@ fn set_webdav_config(
     state: State<'_, Mutex<AppState>>,
 ) -> Result<(), String> {
     let mut s = lock_state(&state)?;
-    if let Some(ws) = s.config.workspaces.get_mut(&workspace_id) {
-        ws.webdav_url = Some(webdav_url);
-    }
+    let ws = s.config.workspaces.get_mut(&workspace_id)
+        .ok_or_else(|| format!("Workspace '{}' not found", workspace_id))?;
+    ws.webdav_url = Some(webdav_url);
     s.save_config()
 }
 
@@ -562,9 +562,9 @@ fn set_workspace_theme(
     state: State<'_, Mutex<AppState>>,
 ) -> Result<(), String> {
     let mut s = lock_state(&state)?;
-    if let Some(ws) = s.config.workspaces.get_mut(&workspace_id) {
-        ws.theme = theme;
-    }
+    let ws = s.config.workspaces.get_mut(&workspace_id)
+        .ok_or_else(|| format!("Workspace '{}' not found", workspace_id))?;
+    ws.theme = theme;
     s.save_config()
 }
 
@@ -575,9 +575,9 @@ fn set_sync_interval(
     state: State<'_, Mutex<AppState>>,
 ) -> Result<(), String> {
     let mut s = lock_state(&state)?;
-    if let Some(ws) = s.config.workspaces.get_mut(&workspace_id) {
-        ws.sync_interval_secs = interval_secs;
-    }
+    let ws = s.config.workspaces.get_mut(&workspace_id)
+        .ok_or_else(|| format!("Workspace '{}' not found", workspace_id))?;
+    ws.sync_interval_secs = interval_secs;
     s.save_config()
 }
 
@@ -588,9 +588,9 @@ fn set_sync_interval_unfocused(
     state: State<'_, Mutex<AppState>>,
 ) -> Result<(), String> {
     let mut s = lock_state(&state)?;
-    if let Some(ws) = s.config.workspaces.get_mut(&workspace_id) {
-        ws.sync_interval_unfocused_secs = interval_secs;
-    }
+    let ws = s.config.workspaces.get_mut(&workspace_id)
+        .ok_or_else(|| format!("Workspace '{}' not found", workspace_id))?;
+    ws.sync_interval_unfocused_secs = interval_secs;
     s.save_config()
 }
 

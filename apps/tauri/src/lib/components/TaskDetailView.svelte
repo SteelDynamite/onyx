@@ -32,19 +32,19 @@
     if (isDesktop) appWindow.startDragging();
   }
 
-  function debouncedSave(fields: Partial<Task>) {
+  function debouncedSave() {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
-      app.updateTask({ ...task, ...fields });
+      app.updateTask({ ...task, title: title.trim() || task.title, description });
     }, 400);
   }
 
   function handleTitleInput() {
-    debouncedSave({ title: title.trim() || task.title });
+    debouncedSave();
   }
 
   function handleDescInput() {
-    debouncedSave({ description });
+    debouncedSave();
   }
 
   function handleDateChange(iso: string | null, hasTime: boolean = false) {

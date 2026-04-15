@@ -27,7 +27,7 @@ const DEFAULT_TASK_VERSION: u64 = 1;
 /// Write data to a temporary file then atomically rename to the target path.
 /// Prevents corruption from partial writes on crash. Cleans up temp file on
 /// rename failure to prevent accumulation.
-fn atomic_write(path: &Path, content: &[u8]) -> std::io::Result<()> {
+pub(crate) fn atomic_write(path: &Path, content: &[u8]) -> std::io::Result<()> {
     let temp = path.with_extension("tmp");
     fs::write(&temp, content)?;
     if let Err(e) = fs::rename(&temp, path) {
@@ -759,7 +759,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let storage = init_storage(&temp_dir);
 
-        let content = "---\nid: 550e8400-e29b-41d4-a716-446655440000\nstatus: backlog\ndue: 2026-06-15T12:00:00Z\nversion: 2\nparent: 660e8400-e29b-41d4-a716-446655440001\n---\n\nNotes";
+        let content = "---\nid: 550e8400-e29b-41d4-a716-446655440000\nstatus: backlog\ndate: 2026-06-15T12:00:00Z\nversion: 2\nparent: 660e8400-e29b-41d4-a716-446655440001\n---\n\nNotes";
         let (fm, _) = storage.parse_markdown_with_frontmatter(content).unwrap();
         assert!(fm.date.is_some());
         assert!(fm.parent.is_some());
