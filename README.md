@@ -91,7 +91,7 @@ cargo run -p onyx-cli -- --help
 
 # Run Tauri GUI
 cd apps/tauri && npm install
-npm run tauri dev
+npm run tauri dev                # (Wayland: WEBKIT_DISABLE_DMABUF_RENDERER=1 npm run tauri dev)
 ```
 
 ## Quick Start

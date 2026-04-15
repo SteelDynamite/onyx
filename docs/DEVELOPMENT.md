@@ -272,7 +272,7 @@ Inspect the file system directly:
 
 ```bash
 # Check metadata
-cat ~/test-tasks/.metadata.json | jq
+cat ~/test-tasks/.onyx-workspace.json | jq
 
 # Check list metadata
 cat ~/test-tasks/My\ Tasks/.listdata.json | jq
