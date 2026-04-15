@@ -248,9 +248,8 @@ fn test_with_temp_dir() {
 1. Update `Task` struct in `models.rs`
 2. Update `TaskFrontmatter` in `storage.rs`
 3. Update markdown parsing/writing in `storage.rs`
-4. Add migration logic if needed
-5. Update tests
-6. Update documentation
+4. Update tests
+5. Update documentation
 
 ### Adding a New CLI Command
 
@@ -293,11 +292,10 @@ We follow [Semantic Versioning](https://semver.org/):
 ### Creating a Release
 
 1. Update version in all `Cargo.toml` files
-2. Update `CHANGELOG.md`
-3. Create git tag: `git tag v0.1.0`
-4. Build release binaries: `cargo build --release`
-5. Test release binaries
-6. Push tag: `git push origin v0.1.0`
+2. Create git tag: `git tag v0.1.0`
+3. Build release binaries: `cargo build --release`
+4. Test release binaries
+5. Push tag: `git push origin v0.1.0`
 
 ## Troubleshooting
 
@@ -346,7 +344,6 @@ cargo run -p onyx-cli -- init ~/test-tasks --name test
 3. Lint code: `cargo clippy`
 4. Update documentation
 5. Add tests for new features
-6. Update CHANGELOG.md
 
 ### Commit Messages
 
