@@ -62,7 +62,8 @@ Tasks are stored as individual `.md` files with YAML frontmatter:
 id: 550e8400-e29b-41d4-a716-446655440000
 status: backlog
 version: 3
-due: 2026-11-15T14:00:00Z
+date: 2026-11-15T14:00:00Z
+has_time: true
 parent: 550e8400-e29b-41d4-a716-446655440001
 ---
 
@@ -84,8 +85,8 @@ Task {
     title: String,              // Derived from filename (without .md extension)
     description: String,              // Markdown content
     status: TaskStatus,         // Backlog or Completed
-    due_date: Option<DateTime>,
-    has_time: bool,             // Whether due_date includes a specific time
+    date: Option<DateTime>,
+    has_time: bool,             // Whether date includes a specific time
     version: u64,               // Increments (saturating) on every write; used for sync dedup
     parent_id: Option<Uuid>,    // For subtasks
 }
@@ -98,10 +99,10 @@ enum TaskStatus {
 TaskList {
     id: Uuid,
     title: String,              // Derived from folder name
-    tasks: Vec<Task>,           // Ordered by task_order, optionally grouped by due date
+    tasks: Vec<Task>,           // Ordered by task_order, optionally grouped by date
     created_at: DateTime,
     updated_at: DateTime,
-    group_by_due_date: bool,    // If true, group by due date before applying task_order
+    group_by_date: bool,        // If true, group by date before applying task_order
 }
 
 AppConfig {
@@ -109,14 +110,22 @@ AppConfig {
     current_workspace: Option<String>,              // UUID
 }
 
+WorkspaceMode {
+    Local,
+    Webdav,
+    GoogleTasks,
+}
+
 WorkspaceConfig {
-    name: String,                      // Display name
+    name: String,                              // Display name
     path: PathBuf,
-    mode: WorkspaceMode,               // Local or Webdav
+    mode: WorkspaceMode,                       // Local, Webdav, or GoogleTasks
     webdav_url: Option<String>,
-    webdav_path: Option<String>,       // User-selected remote folder
+    webdav_path: Option<String>,               // User-selected remote folder
+    google_account: Option<String>,            // Email/display name (GoogleTasks workspaces)
     theme: Option<String>,
-    sync_interval_secs: Option<u64>,
+    sync_interval_secs: Option<u64>,           // Auto-sync polling interval (focused)
+    sync_interval_unfocused_secs: Option<u64>, // Auto-sync interval when unfocused
 }
 ```
 
@@ -152,7 +161,7 @@ WorkspaceConfig {
   "id": "list-uuid-1",
   "created_at": "2026-10-26T10:00:00Z",
   "updated_at": "2026-10-27T14:30:00Z",
-  "group_by_due_date": false,
+  "group_by_date": false,
   "task_order": [
     "task-uuid-1",
     "task-uuid-2",
@@ -163,8 +172,8 @@ WorkspaceConfig {
 
 **Task Ordering**:
 - Tasks are always ordered according to the `task_order` array (manual ordering)
-- When `group_by_due_date` is `true`, tasks are first grouped by their due date, then sorted within each group by `task_order`
-- Tasks without due dates appear at the end when grouping is enabled
+- When `group_by_date` is `true`, tasks are first grouped by their date, then sorted within each group by `task_order`
+- Tasks without dates appear at the end when grouping is enabled
 
 **App Configuration** (separate from task data, supports multiple workspaces):
 - Windows: `%APPDATA%/onyx/config.json`
@@ -220,8 +229,8 @@ impl TaskRepository {
     pub fn get_task_order(&self, list_id: Uuid) -> Result<Vec<Uuid>>;
 
     // Grouping preference (modifies .listdata.json)
-    pub fn set_group_by_due_date(&mut self, list_id: Uuid, enabled: bool) -> Result<()>;
-    pub fn get_group_by_due_date(&self, list_id: Uuid) -> Result<bool>;
+    pub fn set_group_by_date(&mut self, list_id: Uuid, enabled: bool) -> Result<()>;
+    pub fn get_group_by_date(&self, list_id: Uuid) -> Result<bool>;
 }
 
 pub trait Storage {
@@ -351,9 +360,9 @@ $ onyx list create "Personal Projects"
 $ onyx add "Buy groceries"
 ✓ Created task "Buy groceries" (550e8400-e29b-41d4-a716-446655440000)
 
-$ onyx add "Review PR #123" --list "Work" --due "2026-11-15"
+$ onyx add "Review PR #123" --list "Work" --date "2026-11-15"
 ✓ Created task "Review PR #123" (7f3a9c21-b8d2-4e5f-9a1c-3d8e7f6a2b1c)
-  Due: 2026-11-15
+  Date: 2026-11-15
 
 # Or specify workspace explicitly
 $ onyx add "Team meeting" --workspace shared
@@ -367,7 +376,7 @@ My Tasks (3 tasks)
   [✓] Pay bills
 
 Work (2 tasks)
-  [ ] Review PR #123 (due: 2026-11-15)
+  [ ] Review PR #123 (date: 2026-11-15)
   [ ] Team meeting prep
 
 # List tasks from specific workspace
@@ -379,7 +388,7 @@ Shared Tasks (2 tasks)
 # List tasks in specific list
 $ onyx list show --list "Work"
 Work (2 tasks)
-  [ ] Review PR #123 (due: 2026-11-15)
+  [ ] Review PR #123 (date: 2026-11-15)
   [ ] Team meeting prep
 
 # Complete a task
@@ -417,12 +426,12 @@ $ onyx workspace remove shared
 Continue? (y/n): y
 ✓ Removed workspace "shared"
 
-# Toggle grouping by due date (tasks always use manual task_order within groups)
+# Toggle grouping by date (tasks always use manual task_order within groups)
 $ onyx group enable --list "Work"
-✓ Enabled group-by-due-date for list "Work"
+✓ Enabled group-by-date for list "Work"
 
 $ onyx group disable --list "Personal"
-✓ Disabled group-by-due-date for list "Personal"
+✓ Disabled group-by-date for list "Personal"
 ```
 
 ### Deliverables
@@ -468,12 +477,14 @@ Add WebDAV support to `onyx-core`:
 WorkspaceConfig {
     name: String,
     path: PathBuf,
-    mode: WorkspaceMode,               // Local or Webdav
+    mode: WorkspaceMode,                           // Local, Webdav, or GoogleTasks
     webdav_url: Option<String>,
-    webdav_path: Option<String>,       // User-selected remote folder
+    webdav_path: Option<String>,                   // User-selected remote folder
+    google_account: Option<String>,                // Email/display name (GoogleTasks workspaces)
     last_sync: Option<DateTime>,
     theme: Option<String>,
-    sync_interval_secs: Option<u64>,
+    sync_interval_secs: Option<u64>,               // Auto-sync polling interval (focused)
+    sync_interval_unfocused_secs: Option<u64>,     // Auto-sync interval when unfocused
 }
 
 // AppConfig remains the same (workspaces + current_workspace)
@@ -688,14 +699,16 @@ AppConfig {
 }
 
 WorkspaceConfig {
-    name: String,                        // Display name
+    name: String,                                  // Display name
     path: PathBuf,
-    mode: WorkspaceMode,                 // Local or Webdav
+    mode: WorkspaceMode,                           // Local, Webdav, or GoogleTasks
     webdav_url: Option<String>,
-    webdav_path: Option<String>,         // User-selected remote folder
+    webdav_path: Option<String>,                   // User-selected remote folder
+    google_account: Option<String>,                // Email/display name (GoogleTasks workspaces)
     last_sync: Option<DateTime>,
-    theme: Option<String>,               // Per-workspace theme
-    sync_interval_secs: Option<u64>,     // Auto-sync interval
+    theme: Option<String>,                         // Per-workspace theme
+    sync_interval_secs: Option<u64>,               // Auto-sync interval (focused)
+    sync_interval_unfocused_secs: Option<u64>,     // Auto-sync interval when unfocused
 }
 ```
 
@@ -741,7 +754,7 @@ WorkspaceConfig {
 - [x] Keyboard shortcuts (Escape closes settings → detail → drawer → menus in priority order)
 - [x] Sync status indicators (last-sync time + upload/download counts chip in TasksScreen)
 - [x] Push/pull sync mode selection (session-only sync direction selector in SettingsScreen)
-- [x] Group-by-due-date toggle per list (checkmark toggle in list kebab menu)
+- [x] Group-by-date toggle per list (checkmark toggle in list kebab menu)
 - [x] Subtask hierarchy (expand/collapse, inline add, cascade toggle/delete)
 - [ ] Search/filter tasks
 - [x] Desktop packaging (Linux: AppImage + .deb; Windows: MSI; macOS not yet verified)
@@ -955,10 +968,13 @@ npm run tauri ios build
 ### Features
 
 #### Google Tasks Importer
-- [ ] **Import from Google Tasks** (via API or export)
-- [ ] Migrate tasks, lists, due dates, notes
+- [x] `google_tasks.rs` module in `onyx-core` — client, UUID mapping, read-only sync (remote always wins)
+- [x] `GoogleTasks` workspace mode and `google_account` config field
+- [x] Tauri commands: `google_tasks_authorize()`, `google_tasks_sync()`
+- [ ] Complete OAuth flow (client ID/secret placeholders need real credentials)
+- [ ] Migrate tasks, lists, due dates, notes with full UI integration
 - [ ] Preserve task hierarchy and order
-- [ ] Easy onboarding for Google Tasks users
+- [ ] Easy onboarding flow for Google Tasks users
 
 #### Advanced Task Management
 - [ ] **Recurring tasks** (tasks that automatically uncomplete and reschedule)
@@ -1029,6 +1045,6 @@ This project is free and open-source software licensed under GPL v3.
 
 ---
 
-**Last Updated**: 2026-04-05
+**Last Updated**: 2026-04-15
 **Document Version**: 4.3
 **Status**: Ready to Implement - Milestone-Driven Plan

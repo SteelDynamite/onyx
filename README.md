@@ -114,8 +114,8 @@ cargo run -p onyx-cli -- init ~/Documents/Tasks --name personal
 # Add a task
 cargo run -p onyx-cli -- add "Buy groceries"
 
-# Add a task with due date
-cargo run -p onyx-cli -- add "Review PR #123" --list "Work" --due "2026-11-15"
+# Add a task with a date
+cargo run -p onyx-cli -- add "Review PR #123" --list "Work" --date "2026-11-15"
 
 # List all tasks
 cargo run -p onyx-cli -- list show
@@ -168,7 +168,7 @@ Tasks are stored as markdown files with YAML frontmatter (Obsidian-compatible):
 id: 550e8400-e29b-41d4-a716-446655440000
 status: backlog
 version: 3
-due: 2026-11-15T14:00:00Z
+date: 2026-11-15T14:00:00Z
 ---
 
 Task description and notes go here in **markdown** format.
