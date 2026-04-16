@@ -18,7 +18,7 @@
   let selectedMinute = $state(existing ? existing.getMinutes() : 0);
   let visible = $state(false);
 
-  let todayStr = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
+  let todayStr = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
 
   let daysInMonth = $derived(new Date(viewYear, viewMonth + 1, 0).getDate());
   let firstDayOfWeek = $derived(new Date(viewYear, viewMonth, 1).getDay());
@@ -53,7 +53,7 @@
   }
 
   function isToday(day: number): boolean {
-    return `${viewYear}-${viewMonth}-${day}` === todayStr;
+    return `${viewYear}-${viewMonth + 1}-${day}` === todayStr;
   }
 
   function isSelected(day: number): boolean {
