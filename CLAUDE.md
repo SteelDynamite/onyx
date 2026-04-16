@@ -37,7 +37,7 @@ Two-crate workspace (`resolver = "2"`, edition 2021) plus a Tauri app:
 
 - **Storage trait** (`storage.rs`): Strategy pattern for task persistence. `FileSystemStorage` reads/writes markdown files with YAML frontmatter and JSON metadata files. Atomic writes (temp file + rename, with temp cleanup on failure) for all metadata files. Input validation: task titles max 500 chars, descriptions max 1MB, list names max 255 chars, YAML frontmatter max 64KB. Delete operations update metadata before removing files to prevent orphaned metadata on crash.
 - **Repository** (`repository.rs`): `TaskRepository` wraps a `Storage` impl and provides the public API for task/list CRUD, ordering, and grouping. Tests live here.
-- **Config** (`config.rs`): `AppConfig` manages workspaces keyed by UUID string. `WorkspaceConfig` stores `name`, `path`, `mode` (Local/Webdav/GoogleTasks), `webdav_url`, `webdav_path` (user-selected remote folder), `google_account` (display name/email for GoogleTasks workspaces), `theme`, `sync_interval_secs` (focused polling interval), and `sync_interval_unfocused_secs` (lower-frequency polling when window loses focus, for mobile battery optimization). `add_workspace` returns a generated UUID. Stored in platform-specific config dirs via the `directories` crate. Atomic writes (temp file + rename) prevent corruption on crash.
+- **Config** (`config.rs`): `AppConfig` manages workspaces keyed by UUID string. `WorkspaceConfig` stores `name`, `path`, `mode` (Local/Webdav/GoogleTasks), `webdav_url`, `webdav_path` (user-selected remote folder), `google_account` (display name/email for GoogleTasks workspaces), `last_sync` (timestamp of last successful sync), `theme`, `sync_interval_secs` (focused polling interval), and `sync_interval_unfocused_secs` (lower-frequency polling when window loses focus, for mobile battery optimization). `add_workspace` returns a generated UUID. Stored in platform-specific config dirs via the `directories` crate. Atomic writes (temp file + rename) prevent corruption on crash.
 - **Sync** (`sync.rs`): Three-way diff sync with offline queue. File-based `.sync.lock` prevents concurrent sync operations (auto-cleaned after 5 minutes if stale). Checksum-based conflict resolution: downloads remote, compares SHA-256 — identical content is a false conflict (skipped); when different, remote wins and local is recovered as a duplicate with a new UUID and `[RECOVERED FROM CONFLICT]` prefix (duplicate file cleaned up if metadata update fails). Auto-sync lifecycle: periodic polling (configurable interval, default 60s), debounced file-change (5s), window-focus (30s stale threshold). Wrapped in `tokio::time::timeout` (60s) to handle unreachable servers on Windows. Path traversal validation rejects `..` components and backslashes anywhere in sync paths. Atomic writes for sync state and queue files (temp cleanup on failure).
 - **WebDAV** (`webdav.rs`): reqwest client with rustls-tls, 30s request timeout, 10s connect timeout. Rejects non-HTTPS URLs. `Zeroizing<String>` for credential fields. `move_resource` method for WebDAV MOVE (workspace rename). 10MB cap on both PROPFIND responses and file downloads. Desktop credentials via `keyring` crate (feature-gated); Tauri GUI uses `tauri-plugin-credentials` for cross-platform support (Android Keystore + desktop keychain).
 - **Google Tasks** (`google_tasks.rs`): Read-only Google Tasks API client using reqwest with Bearer auth. `gt_id_to_uuid()` converts Google Task IDs to stable UUID v5 values for consistent cross-sync identity. Fetches all task lists and tasks from the Google Tasks REST API and writes them locally via `FileSystemStorage`. Remote always wins (read-only workspace mode). OAuth flow is partially implemented — client ID/secret are placeholders pending real credentials.
@@ -80,7 +80,7 @@ Pre-alpha. No users, no released builds, no data to migrate. Breaking changes to
 - Sliding lists drawer with checkmark selection
 - Settings popup overlay
 - Workspace switcher drop-up with add/remove
-- Per-workspace theme system (System default, Light, Dark, Nord, Dracula, Solarized Dark, Ink) via CSS `data-theme` attribute
+- Per-workspace theme system (System default, Light, Dark, Nord, Dracula, Solarized Dark, Black and Gold, Ink) via CSS `data-theme` attribute
 - Completed tasks section with animated show/hide
 - Date picker/editor (DateTimePicker in new task + task detail); `has_time: bool` field tracks whether time is set
 - Move task between lists (inline list in kebab menu, no submenu)
@@ -108,6 +108,7 @@ Pre-alpha. No users, no released builds, no data to migrate. Breaking changes to
 - Custom confirmation dialogs (ConfirmDialog component replaces native confirm())
 - Workspace path validation (rejects system directories)
 - Task detail auto-cleanup (taskStack clears when viewed task is deleted or list switches)
+- Swipe gestures on mobile: swipe left/right on a task to toggle completion (swipe direction depends on current status)
 - Accessibility: ARIA labels/roles on interactive components, keyboard handlers, `prefers-reduced-motion` CSS support
 
 ### GUI features NOT yet done
