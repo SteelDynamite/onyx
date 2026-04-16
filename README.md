@@ -29,7 +29,7 @@ onyx/
 - **Phase 1** (Core + CLI): Complete
 - **Phase 2** (WebDAV Sync): Complete — backend, CLI, and GUI all wired
 - **Phase 3** (GUI MVP): Complete
-- **Phase 4** (Mobile): Tauri Android cfg-gated, needs `tauri android init` + build
+- **Phase 4** (Mobile): In progress — Android preliminaries done (file-watcher gating, tauri-plugin-credentials, safe area insets, Android targets configured); needs build verification and iOS setup
 
 ### Core Library (`onyx-core`)
 - Data models (Task, TaskList, AppConfig, WorkspaceConfig)
@@ -55,7 +55,7 @@ onyx/
 - Drag-and-drop reordering
 - Sliding lists drawer, settings popup
 - Workspace switcher with add/remove
-- Dark mode (GNOME-style neutral grays, cyan-blue accent)
+- Per-workspace theme system (System default, Light, Dark, Nord, Dracula, Solarized Dark, Ink)
 - Due date picker/editor with optional time
 - Subtask hierarchy with three-panel slide navigation
 - Move tasks between lists
@@ -169,6 +169,8 @@ id: 550e8400-e29b-41d4-a716-446655440000
 status: backlog
 version: 3
 date: 2026-11-15T14:00:00Z
+has_time: true
+parent: 550e8400-e29b-41d4-a716-446655440001
 ---
 
 Task description and notes go here in **markdown** format.

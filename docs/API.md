@@ -207,6 +207,18 @@ let list = repo.get_list(list_id)?;
 repo.delete_list(list_id)?;
 ```
 
+#### Rename List
+
+```rust
+repo.rename_list(list_id, "New Name".to_string())?;
+```
+
+#### Move Task Between Lists
+
+```rust
+repo.move_task(from_list_id, to_list_id, task_id)?;
+```
+
 ### Task Ordering
 
 #### Reorder Task

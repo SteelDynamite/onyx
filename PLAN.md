@@ -123,6 +123,7 @@ WorkspaceConfig {
     webdav_url: Option<String>,
     webdav_path: Option<String>,               // User-selected remote folder
     google_account: Option<String>,            // Email/display name (GoogleTasks workspaces)
+    last_sync: Option<DateTime>,               // Timestamp of last successful sync
     theme: Option<String>,
     sync_interval_secs: Option<u64>,           // Auto-sync polling interval (focused)
     sync_interval_unfocused_secs: Option<u64>, // Auto-sync interval when unfocused
@@ -223,6 +224,8 @@ impl TaskRepository {
     pub fn get_lists(&self) -> Result<Vec<TaskList>>;
     pub fn get_list(&self, list_id: Uuid) -> Result<TaskList>;
     pub fn delete_list(&mut self, id: Uuid) -> Result<()>;
+    pub fn rename_list(&mut self, list_id: Uuid, new_name: String) -> Result<()>;
+    pub fn move_task(&mut self, from_list_id: Uuid, to_list_id: Uuid, task_id: Uuid) -> Result<()>;
 
     // Task ordering (modifies .listdata.json)
     pub fn reorder_task(&mut self, list_id: Uuid, task_id: Uuid, new_position: usize) -> Result<()>;
@@ -750,10 +753,10 @@ WorkspaceConfig {
 - [x] Mark tasks complete/incomplete with animated transitions
 - [x] Drag-and-drop task reordering
 - [x] Sliding lists drawer (80cqi wide, left side)
-- [x] Settings popup overlay (WebDAV config, dark mode toggle)
-- [x] Dark mode (GNOME-style neutral theme, cyan-blue accent)
+- [x] Settings popup overlay (WebDAV config, theme selector)
+- [x] Per-workspace theme system (System default, Light, Dark, Nord, Dracula, Solarized Dark, Ink)
 - [x] Animated completed section show/hide
-- [x] Move task between lists (kebab menu → "Move to..." submenu in task detail view)
+- [x] Move task between lists (kebab menu → "Move to..." inline list in task detail view, not a submenu)
 - [x] Optional time on due dates (`has_time: bool` field on Task with `#[serde(default)]` for backward compat; replaces the hours==0 heuristic)
 - [x] Due date picker/editor (DateTimePicker component in both new task toast + task detail view)
 - [x] WebDAV setup flow with credentials (settings auto-populates URL/username/password from config + keychain on open)
@@ -977,7 +980,7 @@ npm run tauri ios build
 #### Google Tasks Importer
 - [x] `google_tasks.rs` module in `onyx-core` — client, UUID mapping, read-only sync (remote always wins)
 - [x] `GoogleTasks` workspace mode and `google_account` config field
-- [x] Tauri commands: `google_tasks_authorize()`, `google_tasks_sync()`
+- [x] Tauri commands: `start_google_oauth()`, `add_google_tasks_workspace()`, `sync_google_tasks_workspace()`
 - [ ] Complete OAuth flow (client ID/secret placeholders need real credentials)
 - [ ] Migrate tasks, lists, due dates, notes with full UI integration
 - [ ] Preserve task hierarchy and order
