@@ -452,15 +452,7 @@ fn render_task_markdown(task: &Task) -> String {
 
 /// Sanitize a string for use as a filesystem path component.
 fn sanitize_name(name: &str) -> String {
-    let s: String = name.chars()
-        .map(|c| match c {
-            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
-            '\0'..='\x1f' => '_',
-            _ => c,
-        })
-        .collect::<String>()
-        .trim_matches(|c: char| c == '.' || c == ' ')
-        .to_string();
+    let s = crate::sanitize_filename(name);
     if s.is_empty() { "Untitled".to_string() } else { s }
 }
 
