@@ -87,7 +87,7 @@ fn validate_workspace_path(path: &str) -> Result<(), String> {
     #[cfg(windows)]
     {
         let upper = normalized.to_uppercase();
-        if upper.len() <= 3 && upper.ends_with(":\\") || upper.ends_with(":") {
+        if upper.len() <= 3 && (upper.ends_with(":\\") || upper.ends_with(":")) {
             return Err(format!("Cannot use drive root as workspace: {}", path));
         }
     }

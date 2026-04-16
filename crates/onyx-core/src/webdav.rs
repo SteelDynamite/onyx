@@ -20,10 +20,10 @@ pub struct RemoteFileInfo {
 
 /// WebDAV client wrapping reqwest with basic auth. Credentials are zeroized on drop.
 pub struct WebDavClient {
-    _client: Client,
-    _base_url: String,
-    _username: Zeroizing<String>,
-    _password: Zeroizing<String>,
+    client: Client,
+    base_url: String,
+    username: Zeroizing<String>,
+    password: Zeroizing<String>,
 }
 
 impl WebDavClient {
@@ -43,17 +43,17 @@ impl WebDavClient {
             .build()
             .map_err(|e| Error::WebDav(format!("Failed to build HTTP client: {}", e)))?;
         Ok(Self {
-            _client: client,
-            _base_url: base_url,
-            _username: Zeroizing::new(username.to_string()),
-            _password: Zeroizing::new(password.to_string()),
+            client,
+            base_url,
+            username: Zeroizing::new(username.to_string()),
+            password: Zeroizing::new(password.to_string()),
         })
     }
 
     fn full_url(&self, path: &str) -> String {
         let path = path.trim_start_matches('/');
         if path.is_empty() {
-            self._base_url.clone()
+            self.base_url.clone()
         } else {
             // Percent-encode path segments while preserving '/'
             let encoded: String = path
@@ -61,15 +61,15 @@ impl WebDavClient {
                 .map(percent_encode)
                 .collect::<Vec<_>>()
                 .join("/");
-            format!("{}/{}", self._base_url, encoded)
+            format!("{}/{}", self.base_url, encoded)
         }
     }
 
     /// Test connection by issuing a PROPFIND depth 0 on the root.
     pub async fn test_connection(&self) -> Result<()> {
-        let resp = self._client
-            .request(reqwest::Method::from_bytes(b"PROPFIND").expect("PROPFIND is a valid HTTP method"), &self._base_url)
-            .basic_auth(self._username.as_str(), Some(self._password.as_str()))
+        let resp = self.client
+            .request(reqwest::Method::from_bytes(b"PROPFIND").expect("PROPFIND is a valid HTTP method"), &self.base_url)
+            .basic_auth(self.username.as_str(), Some(self.password.as_str()))
             .header("Depth", "0")
             .header("Content-Type", "application/xml")
             .body(PROPFIND_BODY)
@@ -89,9 +89,9 @@ impl WebDavClient {
     /// List files at a given path using PROPFIND depth 1.
     pub async fn list_files(&self, path: &str) -> Result<Vec<RemoteFileInfo>> {
         let url = self.full_url(path);
-        let resp = self._client
+        let resp = self.client
             .request(reqwest::Method::from_bytes(b"PROPFIND").expect("PROPFIND is a valid HTTP method"), &url)
-            .basic_auth(self._username.as_str(), Some(self._password.as_str()))
+            .basic_auth(self.username.as_str(), Some(self.password.as_str()))
             .header("Depth", "1")
             .header("Content-Type", "application/xml")
             .body(PROPFIND_BODY)
@@ -113,15 +113,15 @@ impl WebDavClient {
             return Err(Error::WebDav("PROPFIND response too large (>10MB)".into()));
         }
         let body = String::from_utf8_lossy(&bytes);
-        parse_propfind_response(&body, &self._base_url, path)
+        parse_propfind_response(&body, &self.base_url, path)
     }
 
     /// Download a file's contents.
     pub async fn get_file(&self, path: &str) -> Result<Vec<u8>> {
         let url = self.full_url(path);
-        let resp = self._client
+        let resp = self.client
             .get(&url)
-            .basic_auth(self._username.as_str(), Some(self._password.as_str()))
+            .basic_auth(self.username.as_str(), Some(self.password.as_str()))
             .send()
             .await?;
 
@@ -147,9 +147,9 @@ impl WebDavClient {
     /// Upload a file.
     pub async fn put_file(&self, path: &str, content: Vec<u8>) -> Result<()> {
         let url = self.full_url(path);
-        let resp = self._client
+        let resp = self.client
             .put(&url)
-            .basic_auth(self._username.as_str(), Some(self._password.as_str()))
+            .basic_auth(self.username.as_str(), Some(self.password.as_str()))
             .body(content)
             .send()
             .await?;
@@ -164,9 +164,9 @@ impl WebDavClient {
     /// Delete a remote file.
     pub async fn delete_file(&self, path: &str) -> Result<()> {
         let url = self.full_url(path);
-        let resp = self._client
+        let resp = self.client
             .delete(&url)
-            .basic_auth(self._username.as_str(), Some(self._password.as_str()))
+            .basic_auth(self.username.as_str(), Some(self.password.as_str()))
             .send()
             .await?;
 
@@ -183,9 +183,9 @@ impl WebDavClient {
     /// Create a directory via MKCOL.
     pub async fn create_dir(&self, path: &str) -> Result<()> {
         let url = self.full_url(path);
-        let resp = self._client
+        let resp = self.client
             .request(reqwest::Method::from_bytes(b"MKCOL").expect("MKCOL is a valid HTTP method"), &url)
-            .basic_auth(self._username.as_str(), Some(self._password.as_str()))
+            .basic_auth(self.username.as_str(), Some(self.password.as_str()))
             .send()
             .await?;
 
@@ -203,9 +203,9 @@ impl WebDavClient {
     pub async fn move_resource(&self, from: &str, to: &str) -> Result<()> {
         let from_url = self.full_url(from);
         let to_url = self.full_url(to);
-        let resp = self._client
+        let resp = self.client
             .request(reqwest::Method::from_bytes(b"MOVE").expect("MOVE is a valid HTTP method"), &from_url)
-            .basic_auth(self._username.as_str(), Some(self._password.as_str()))
+            .basic_auth(self.username.as_str(), Some(self.password.as_str()))
             .header("Destination", &to_url)
             .header("Overwrite", "F")
             .send()
@@ -448,12 +448,12 @@ pub fn store_credentials(domain: &str, username: &str, password: &str) -> Result
 
     let user_entry = keyring::Entry::new(&service, "username")
         .map_err(|e| Error::Credential(format!("Failed to create keyring entry: {}", e)))?;
-    user_entry.set_password(username)
+    user_entry.setpassword(username)
         .map_err(|e| Error::Credential(format!("Failed to store username: {}", e)))?;
 
     let pass_entry = keyring::Entry::new(&scoped_service, "password")
         .map_err(|e| Error::Credential(format!("Failed to create keyring entry: {}", e)))?;
-    pass_entry.set_password(password)
+    pass_entry.setpassword(password)
         .map_err(|e| Error::Credential(format!("Failed to store password: {}", e)))?;
 
     // Clean up legacy unscoped password entry if present
@@ -478,18 +478,18 @@ pub fn load_credentials(domain: &str) -> Result<(Zeroizing<String>, Zeroizing<St
     let user_entry = keyring::Entry::new(&service, "username")
         .map_err(|e| Error::Credential(format!("Failed to create keyring entry: {}", e)))?;
 
-    if let Ok(user) = user_entry.get_password() {
+    if let Ok(user) = user_entry.getpassword() {
         // Try scoped password key first (domain+username), fall back to legacy unscoped key
         let scoped_service = format!("com.onyx.webdav.{}::{}", domain, user);
         let found = keyring::Entry::new(&scoped_service, "password")
             .ok()
-            .and_then(|e| e.get_password().ok())
+            .and_then(|e| e.getpassword().ok())
             .map(|p| (p, false))
             .or_else(|| {
                 // Migration fallback: try legacy unscoped password entry
                 keyring::Entry::new(&service, "password")
                     .ok()
-                    .and_then(|e| e.get_password().ok())
+                    .and_then(|e| e.getpassword().ok())
                     .map(|p| (p, true))
             });
 
@@ -497,7 +497,7 @@ pub fn load_credentials(domain: &str) -> Result<(Zeroizing<String>, Zeroizing<St
             // Auto-migrate legacy credentials to scoped format
             if needs_migration {
                 if let Ok(entry) = keyring::Entry::new(&scoped_service, "password") {
-                    let _ = entry.set_password(&pass);
+                    let _ = entry.setpassword(&pass);
                 }
                 if let Ok(legacy) = keyring::Entry::new(&service, "password") {
                     let _ = legacy.delete_credential();
@@ -547,7 +547,7 @@ pub fn delete_credentials(domain: &str) -> Result<()> {
     // Load username first so we can delete the scoped password entry
     let username = keyring::Entry::new(&service, "username")
         .ok()
-        .and_then(|e| e.get_password().ok());
+        .and_then(|e| e.getpassword().ok());
 
     if let Some(user) = &username {
         let scoped_service = format!("com.onyx.webdav.{}::{}", domain, user);
