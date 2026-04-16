@@ -4,6 +4,17 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 use crate::output;
 use crate::commands::get_repository;
+use onyx_core::TaskList;
+
+/// Find a task by ID across all lists, returning the list ID and cloned task.
+fn find_task(lists: &[TaskList], task_id: Uuid) -> Option<(Uuid, Task)> {
+    for list in lists {
+        if let Some(task) = list.tasks.iter().find(|t| t.id == task_id) {
+            return Some((list.id, task.clone()));
+        }
+    }
+    None
+}
 
 pub fn add(title: String, list_name: Option<String>, date_str: Option<String>, workspace: Option<String>) -> Result<()> {
     let (mut repo, _workspace_name) = get_repository(workspace)?;
@@ -56,25 +67,15 @@ pub fn complete(task_id_str: String, workspace: Option<String>) -> Result<()> {
     let task_id = Uuid::parse_str(&task_id_str)
         .context("Invalid task ID")?;
 
-    // Find the task across all lists
     let lists = repo.get_lists()?;
-    let mut found = false;
+    let (list_id, mut task) = find_task(&lists, task_id)
+        .ok_or_else(|| anyhow::anyhow!("Task not found: {}", task_id_str))?;
 
-    for list in lists {
-        if let Some(mut task) = list.tasks.iter().find(|t| t.id == task_id).cloned() {
-            task.complete();
-            repo.update_task(list.id, task.clone())
-                .context("Failed to update task")?;
+    task.complete();
+    repo.update_task(list_id, task.clone())
+        .context("Failed to update task")?;
 
-            output::success(&format!("Completed task \"{}\"", task.title));
-            found = true;
-            break;
-        }
-    }
-
-    if !found {
-        anyhow::bail!("Task not found: {}", task_id_str);
-    }
+    output::success(&format!("Completed task \"{}\"", task.title));
 
     Ok(())
 }
@@ -85,37 +86,25 @@ pub fn delete(task_id_str: String, workspace: Option<String>) -> Result<()> {
     let task_id = Uuid::parse_str(&task_id_str)
         .context("Invalid task ID")?;
 
-    // Find the task across all lists
     let lists = repo.get_lists()?;
-    let mut found = false;
+    let (list_id, task) = find_task(&lists, task_id)
+        .ok_or_else(|| anyhow::anyhow!("Task not found: {}", task_id_str))?;
 
-    for list in lists {
-        if let Some(task) = list.tasks.iter().find(|t| t.id == task_id) {
-            let title = task.title.clone();
-
-            output::warning(&format!("This will delete task \"{}\"", title));
-            print!("Continue? (y/n): ");
-            use std::io::{self, Write};
-            io::stdout().flush()?;
-            let mut input = String::new();
-            io::stdin().read_line(&mut input)?;
-            if input.trim().to_lowercase() != "y" {
-                output::info("Cancelled");
-                return Ok(());
-            }
-
-            repo.delete_task(list.id, task_id)
-                .context("Failed to delete task")?;
-
-            output::success(&format!("Deleted task \"{}\"", title));
-            found = true;
-            break;
-        }
+    output::warning(&format!("This will delete task \"{}\"", task.title));
+    print!("Continue? (y/n): ");
+    use std::io::{self, Write};
+    io::stdout().flush()?;
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    if input.trim().to_lowercase() != "y" {
+        output::info("Cancelled");
+        return Ok(());
     }
 
-    if !found {
-        anyhow::bail!("Task not found: {}", task_id_str);
-    }
+    repo.delete_task(list_id, task_id)
+        .context("Failed to delete task")?;
+
+    output::success(&format!("Deleted task \"{}\"", task.title));
 
     Ok(())
 }
@@ -126,23 +115,9 @@ pub fn edit(task_id_str: String, workspace: Option<String>) -> Result<()> {
     let task_id = Uuid::parse_str(&task_id_str)
         .context("Invalid task ID")?;
 
-    // Find the task across all lists
     let lists = repo.get_lists()?;
-    let mut task_list_id = None;
-    let mut task_to_edit = None;
-
-    for list in lists {
-        if let Some(task) = list.tasks.iter().find(|t| t.id == task_id).cloned() {
-            task_list_id = Some(list.id);
-            task_to_edit = Some(task);
-            break;
-        }
-    }
-
-    let (list_id, task) = match (task_list_id, task_to_edit) {
-        (Some(lid), Some(t)) => (lid, t),
-        _ => anyhow::bail!("Task not found: {}", task_id_str),
-    };
+    let (list_id, task) = find_task(&lists, task_id)
+        .ok_or_else(|| anyhow::anyhow!("Task not found: {}", task_id_str))?;
 
     // Create temporary file with task content
     let temp_dir = std::env::temp_dir();
