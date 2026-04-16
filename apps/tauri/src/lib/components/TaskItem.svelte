@@ -5,6 +5,7 @@
 <script lang="ts">
   import type { Task } from "../types";
   import { app } from "../stores/app.svelte";
+  import { formatDateLabel } from "../dateFormat";
 
   let { task, onopen, depth = 0, dateChipStyle = "normal", showSubtaskCount = true }: { task: Task; onopen?: (task: Task) => void; depth?: number; dateChipStyle?: "normal" | "overdue" | "hidden"; showSubtaskCount?: boolean } = $props();
 
@@ -77,15 +78,6 @@
     swiping = false;
   }
 
-  function formatDate(iso: string): string {
-    const d = new Date(iso);
-    const today = new Date();
-    if (d.toDateString() === today.toDateString()) return "Today";
-    const tomorrow = new Date(today);
-    tomorrow.setDate(today.getDate() + 1);
-    if (d.toDateString() === tomorrow.toDateString()) return "Tomorrow";
-    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  }
 </script>
 
 <div
@@ -153,11 +145,11 @@
       {#if task.date && dateChipStyle !== "hidden"}
         {#if dateChipStyle === "overdue"}
           <span class="mt-1 inline-block rounded-full border border-danger px-2 py-0.5 text-xs text-danger opacity-80">
-            {formatDate(task.date)}
+            {formatDateLabel(task.date)}
           </span>
         {:else}
           <span class="mt-1 inline-block rounded-full border border-border-light px-2 py-0.5 text-xs opacity-50 dark:border-border-dark">
-            {formatDate(task.date)}
+            {formatDateLabel(task.date)}
           </span>
         {/if}
       {/if}

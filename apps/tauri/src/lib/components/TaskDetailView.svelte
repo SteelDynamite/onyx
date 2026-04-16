@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Task } from "../types";
   import { app } from "../stores/app.svelte";
+  import { formatDateChip } from "../dateFormat";
   import DateTimePicker from "./DateTimePicker.svelte";
   import ConfirmDialog from "./ConfirmDialog.svelte";
   import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -118,17 +119,6 @@
     }
   });
 
-  function formatDateChip(iso: string): string {
-    const d = new Date(iso);
-    const today = new Date();
-    const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-    const day = dayNames[d.getDay()];
-    const pad = (n: number) => String(n).padStart(2, "0");
-    const hasTime = task.has_time;
-    const timePart = hasTime ? `, ${pad(d.getHours())}:${pad(d.getMinutes())}` : "";
-    if (d.toDateString() === today.toDateString()) return `Today${timePart}`;
-    return `${day}, ${pad(d.getDate())}/${pad(d.getMonth() + 1)}${timePart}`;
-  }
 </script>
 
 <!-- Header -->
@@ -240,7 +230,7 @@
     {#if task.date}
       <div class="flex items-center gap-1.5 rounded-full border border-border-light bg-black/5 px-3 py-1 text-sm dark:border-border-dark dark:bg-white/10">
         <button onclick={() => (showDatePicker = true)} class="hover:opacity-70">
-          {formatDateChip(task.date)}
+          {formatDateChip(task.date, task.has_time)}
         </button>
         <button onclick={() => handleDateChange(null)} class="opacity-40 hover:opacity-80">
           <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
