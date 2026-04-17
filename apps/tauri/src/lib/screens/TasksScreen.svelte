@@ -58,6 +58,7 @@
   let completedVisible = $state(false);
   let renamingListId = $state<string | null>(null);
   let renameValue = $state("");
+  let renameListInput = $state<HTMLInputElement | null>(null);
   let showListMenu = $state(false);
   let showSubtasks = $state(false);
   let confirmDeleteList = $state(false);
@@ -83,6 +84,14 @@
   // attribute is unreliable for conditional blocks, so focus imperatively.
   $effect(() => {
     if (showNewList && newListInput) newListInput.focus();
+  });
+
+  // Same imperative-focus trick for the inline list-rename input.
+  $effect(() => {
+    if (renamingListId && renameListInput) {
+      renameListInput.focus();
+      renameListInput.select();
+    }
   });
 
 
@@ -631,11 +640,11 @@
           {#if renamingListId === app.activeListId}
             <input
               type="text"
+              bind:this={renameListInput}
               bind:value={renameValue}
               class="w-full bg-transparent text-xl font-bold outline-none"
               onkeydown={(e) => { if (e.key === "Enter") handleRenameList(); if (e.key === "Escape") renamingListId = null; }}
               onblur={handleRenameList}
-              autofocus
             />
           {:else}
             <p class="text-xl font-bold">{app.activeList?.title ?? "Tasks"}</p>

@@ -19,8 +19,18 @@
 
   let renaming = $state(false);
   let renameValue = $state("");
+  let renameInput = $state<HTMLInputElement | null>(null);
   let showKebab = $state(false);
   let confirmRename = $state(false);
+
+  // Imperative focus — Svelte's native autofocus attribute is unreliable
+  // for inputs that appear only via conditional blocks.
+  $effect(() => {
+    if (renaming && renameInput) {
+      renameInput.focus();
+      renameInput.select();
+    }
+  });
 
   // Load stored credentials exactly once for this workspace. Previously this
   // ran on every `ws.webdav_url` change, which silently clobbered in-progress
@@ -133,11 +143,11 @@
     {#if renaming}
       <input
         type="text"
+        bind:this={renameInput}
         bind:value={renameValue}
         class="w-full bg-transparent text-xl font-bold outline-none"
         onkeydown={(e) => { if (e.key === "Enter") handleRename(); if (e.key === "Escape") { renaming = false; } }}
         onblur={handleRename}
-        autofocus
       />
     {:else}
       <p class="text-xl font-bold">{ws?.name}</p>
