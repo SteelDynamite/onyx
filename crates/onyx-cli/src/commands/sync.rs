@@ -2,22 +2,8 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 use onyx_core::sync::{SyncMode, sync_workspace, get_sync_status};
 use onyx_core::webdav::{WebDavClient, store_credentials, load_credentials};
-use onyx_core::config::AppConfig;
 use crate::output;
-use super::{load_config, save_config};
-
-/// Resolve a workspace name to (id, config). Falls back to current workspace if name is None.
-fn resolve_workspace(config: &AppConfig, name: Option<&str>) -> Result<(String, onyx_core::config::WorkspaceConfig)> {
-    if let Some(name) = name {
-        let (id, ws) = config.find_by_name(name)
-            .ok_or_else(|| anyhow::anyhow!("Workspace '{}' not found", name))?;
-        Ok((id.clone(), ws.clone()))
-    } else {
-        let (id, ws) = config.get_current_workspace()
-            .context("No workspace set. Use 'onyx init' to create one.")?;
-        Ok((id.clone(), ws.clone()))
-    }
-}
+use super::{load_config, save_config, resolve_workspace};
 
 /// Run sync setup: prompt for URL, username, password, test connection, store credentials.
 pub fn setup(workspace_name: Option<String>) -> Result<()> {
