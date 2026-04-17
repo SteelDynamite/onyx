@@ -10,10 +10,13 @@ import type {
 } from "../types";
 import { groupTasksByDate, type TaskGroup } from "../grouping";
 
-// Listen for file system changes from the backend watcher.
+// Listen for file system changes from the backend watcher. Guard against
+// firing while the user is on the setup/missing screens — loadLists would
+// fail (no workspace) and a debouncedSync against a non-synced workspace
+// would be wasted work.
 listen("fs-changed", () => {
+  if (!hasWorkspace || screen !== "tasks") return;
   loadLists();
-  // Debounced sync for WebDAV workspaces on local file changes
   if (isSyncedWorkspace) debouncedSync();
 });
 
