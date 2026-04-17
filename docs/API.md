@@ -216,6 +216,8 @@ repo.rename_list(list_id, "New Name".to_string())?;
 #### Move Task Between Lists
 
 ```rust
+// Atomically moves a task from one list to another.
+// If the delete-from-source step fails, the copy in the destination is rolled back.
 repo.move_task(from_list_id, to_list_id, task_id)?;
 ```
 

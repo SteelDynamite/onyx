@@ -753,8 +753,8 @@ WorkspaceConfig {
 - [x] Mark tasks complete/incomplete with animated transitions
 - [x] Drag-and-drop task reordering
 - [x] Sliding lists drawer (80cqi wide, left side)
-- [x] Settings popup overlay (WebDAV config, theme selector)
-- [x] Per-workspace theme system (System default, Light, Dark, Nord, Dracula, Solarized Dark, Ink)
+- [x] Settings popup overlay (WebDAV config, theme selector, window decorations)
+- [x] Per-workspace theme system (System default, Light, Dark, Nord, Dracula, Solarized Dark, Black and Gold, Ink)
 - [x] Animated completed section show/hide
 - [x] Move task between lists (kebab menu → "Move to..." inline list in task detail view, not a submenu)
 - [x] Optional time on due dates (`has_time: bool` field on Task with `#[serde(default)]` for backward compat; replaces the hours==0 heuristic)
@@ -911,7 +911,8 @@ npm run tauri ios build
 - [ ] Multiple windows (optional)
 
 #### Mobile-Specific
-- [x] Swipe gestures (swipe to complete, swipe to delete)
+- [x] Swipe gestures (swipe to toggle completion; direction depends on current task status)
+- [ ] Swipe to delete
 - [ ] Pull-to-refresh
 - [ ] Touch-optimized UI elements
 - [ ] Larger touch targets

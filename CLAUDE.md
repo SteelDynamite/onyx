@@ -80,7 +80,7 @@ Pre-alpha. No users, no released builds, no data to migrate. Breaking changes to
 - Sliding lists drawer with checkmark selection
 - Settings popup overlay
 - Workspace switcher drop-up with add/remove
-- Per-workspace theme system (System default, Light, Dark, Nord, Dracula, Solarized Dark, Ink) via CSS `data-theme` attribute
+- Per-workspace theme system (System default, Light, Dark, Nord, Dracula, Solarized Dark, Black and Gold, Ink) via CSS `data-theme` attribute
 - Completed tasks section with animated show/hide
 - Date picker/editor (DateTimePicker in new task + task detail); `has_time: bool` field tracks whether time is set
 - Move task between lists (inline list in kebab menu, no submenu)
@@ -108,6 +108,7 @@ Pre-alpha. No users, no released builds, no data to migrate. Breaking changes to
 - Custom confirmation dialogs (ConfirmDialog component replaces native confirm())
 - Workspace path validation (rejects system directories)
 - Task detail auto-cleanup (taskStack clears when viewed task is deleted or list switches)
+- Swipe gestures on mobile: swipe left/right on a task to toggle completion (swipe direction depends on current status)
 - Accessibility: ARIA labels/roles on interactive components, keyboard handlers, `prefers-reduced-motion` CSS support
 
 ### GUI features NOT yet done

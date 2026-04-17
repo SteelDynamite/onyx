@@ -55,7 +55,7 @@ onyx/
 - Drag-and-drop reordering
 - Sliding lists drawer, settings popup
 - Workspace switcher with add/remove
-- Per-workspace theme system (System default, Light, Dark, Nord, Dracula, Solarized Dark, Ink)
+- Per-workspace theme system (System default, Light, Dark, Nord, Dracula, Solarized Dark, Black and Gold, Ink)
 - Due date picker/editor with optional time
 - Subtask hierarchy with three-panel slide navigation
 - Move tasks between lists
@@ -64,6 +64,7 @@ onyx/
 - WebDAV setup flow with credential auto-population
 - File watcher (auto-reloads on external changes)
 - Auto-sync with configurable interval, status indicators
+- Swipe gestures on mobile (swipe to toggle completion)
 - Custom confirmation dialogs
 - Desktop packaging (Linux: AppImage + .deb; Windows: MSI)
 
