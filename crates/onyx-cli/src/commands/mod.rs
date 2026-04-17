@@ -53,3 +53,60 @@ pub fn get_repository(workspace_identifier: Option<String>) -> Result<(TaskRepos
 
     Ok((repo, name))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_config_with(ws: &[(&str, &str)]) -> (AppConfig, Vec<String>) {
+        let mut config = AppConfig::new();
+        let ids: Vec<String> = ws.iter()
+            .map(|(name, path)| config.add_workspace(WorkspaceConfig::new(name.to_string(), PathBuf::from(path))))
+            .collect();
+        (config, ids)
+    }
+
+    #[test]
+    fn resolve_by_name() {
+        let (config, _ids) = make_config_with(&[("dev", "/tmp/dev"), ("home", "/tmp/home")]);
+        let (id, ws) = resolve_workspace(&config, Some("dev")).unwrap();
+        assert_eq!(ws.name, "dev");
+        assert!(config.workspaces.contains_key(&id));
+    }
+
+    #[test]
+    fn resolve_by_uuid() {
+        let (config, ids) = make_config_with(&[("dev", "/tmp/dev")]);
+        let target = ids[0].clone();
+        let (id, ws) = resolve_workspace(&config, Some(&target)).unwrap();
+        assert_eq!(id, target);
+        assert_eq!(ws.name, "dev");
+    }
+
+    #[test]
+    fn resolve_unknown_identifier_errors() {
+        let (config, _ids) = make_config_with(&[("dev", "/tmp/dev")]);
+        let err = resolve_workspace(&config, Some("ghost")).unwrap_err();
+        assert!(err.to_string().contains("Workspace 'ghost' not found"));
+    }
+
+    #[test]
+    fn resolve_falls_back_to_current() {
+        let (mut config, ids) = make_config_with(&[("a", "/tmp/a"), ("b", "/tmp/b")]);
+        config.set_current_workspace(ids[1].clone()).unwrap();
+        let (id, ws) = resolve_workspace(&config, None).unwrap();
+        assert_eq!(id, ids[1]);
+        assert_eq!(ws.name, "b");
+    }
+
+    #[test]
+    fn resolve_no_current_gives_actionable_message() {
+        let config = AppConfig::new();
+        let err = resolve_workspace(&config, None).unwrap_err();
+        let msg = err.to_string();
+        // The message should point the user at the right sub-commands, not
+        // at the obsolete 'onyx init' suggestion.
+        assert!(msg.contains("workspace add") || msg.contains("workspace switch"),
+            "expected actionable message, got: {msg}");
+    }
+}

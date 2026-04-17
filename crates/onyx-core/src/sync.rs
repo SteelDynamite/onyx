@@ -1137,8 +1137,7 @@ mod tests {
     #[test]
     fn test_sync_state_save_load_roundtrip() {
         let temp_dir = TempDir::new().unwrap();
-        let mut state = SyncState::default();
-        state.last_sync = Some(Utc::now());
+        let mut state = SyncState { last_sync: Some(Utc::now()), ..Default::default() };
         state.record_file("test.md", "abc123", Some("2026-01-01T00:00:00Z"), 42);
 
         state.save(temp_dir.path()).unwrap();

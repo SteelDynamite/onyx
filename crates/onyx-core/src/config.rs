@@ -4,18 +4,13 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use crate::error::{Error, Result};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum WorkspaceMode {
+    #[default]
     Local,
     Webdav,
     GoogleTasks,
-}
-
-impl Default for WorkspaceMode {
-    fn default() -> Self {
-        Self::Local
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

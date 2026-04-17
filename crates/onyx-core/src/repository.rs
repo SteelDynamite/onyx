@@ -157,12 +157,26 @@ mod tests {
 
         // Create a task
         let task = Task::new("Test Task".to_string());
-        let created_task = repo.create_task(list.id, task).unwrap();
+        let _ = repo.create_task(list.id, task).unwrap();
 
         // List tasks
         let tasks = repo.list_tasks(list.id).unwrap();
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].title, "Test Task");
+    }
+
+    #[test]
+    fn test_create_task_saturates_version_at_max() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut repo = TaskRepository::init(temp_dir.path().to_path_buf()).unwrap();
+        let list = repo.create_list("L".to_string()).unwrap();
+
+        // Simulate a task that is already at u64::MAX. A plain `+=` would
+        // overflow — saturating_add must clamp.
+        let mut task = Task::new("max".to_string());
+        task.version = u64::MAX;
+        let created = repo.create_task(list.id, task).unwrap();
+        assert_eq!(created.version, u64::MAX);
     }
 
     #[test]
