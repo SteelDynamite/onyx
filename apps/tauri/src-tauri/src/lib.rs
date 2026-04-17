@@ -374,6 +374,8 @@ fn create_task(
     title: String,
     description: Option<String>,
     parent_id: Option<String>,
+    date: Option<chrono::DateTime<chrono::Utc>>,
+    has_time: Option<bool>,
     state: State<'_, Mutex<AppState>>,
 ) -> Result<Task, String> {
     let mut s = lock_state(&state)?;
@@ -388,6 +390,11 @@ fn create_task(
         let parent_uuid = Uuid::parse_str(&pid).map_err(|e| e.to_string())?;
         task.parent_id = Some(parent_uuid);
     }
+    // Accept the date fields at creation time so callers don't have to do a
+    // second update() round-trip just to attach a date — which previously
+    // dropped the date entirely if the follow-up update failed.
+    task.date = date;
+    task.has_time = has_time.unwrap_or(false);
     repo_mut(&mut s)?
         .create_task(id, task)
         .map_err(|e| e.to_string())

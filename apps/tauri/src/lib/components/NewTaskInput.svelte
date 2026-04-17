@@ -17,10 +17,15 @@
 
   async function handleSubmit() {
     if (!title.trim()) return;
-    const created = await app.createTask(title.trim(), description.trim() || undefined);
-    if (date && created) {
-      await app.updateTask({ ...created, date: date, has_time: dateHasTime });
-    }
+    // Pass date/has_time into createTask directly so the date can't be lost
+    // if a second round-trip to update() failed after the create succeeded.
+    await app.createTask(
+      title.trim(),
+      description.trim() || undefined,
+      undefined,
+      date,
+      dateHasTime,
+    );
     title = "";
     description = "";
     date = null;

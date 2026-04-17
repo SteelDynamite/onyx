@@ -261,7 +261,13 @@ async function deleteList(id: string) {
   }
 }
 
-async function createTask(title: string, description?: string, parentId?: string): Promise<Task | null> {
+async function createTask(
+  title: string,
+  description?: string,
+  parentId?: string,
+  date?: string | null,
+  hasTime?: boolean,
+): Promise<Task | null> {
   if (!activeListId) return null;
   try {
     const task = await invoke<Task>("create_task", {
@@ -269,6 +275,8 @@ async function createTask(title: string, description?: string, parentId?: string
       title,
       description: description ?? "",
       parentId: parentId ?? null,
+      date: date ?? null,
+      hasTime: hasTime ?? false,
     });
     tasks = parentId ? [task, ...tasks] : [...tasks, task];
     error = null;
