@@ -532,8 +532,11 @@ pub fn delete_credentials(domain: &str) -> Result<()>;
 Add to `onyx-core/Cargo.toml`:
 ```toml
 reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
-keyring = "3.0"
-# TODO: Evaluate dav-client or implement custom WebDAV
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"], optional = true }
+zeroize = "1"
+sha2 = "0.10"
+quick-xml = "0.36"
+# WebDAV implemented as custom client using reqwest + quick-xml for PROPFIND parsing
 ```
 
 ### Features
@@ -844,11 +847,11 @@ npm run tauri ios build
 
 #### Features
 
-- [x] Gate file-watcher initialization behind `#[cfg(not(mobile))]`
+- [x] Gate file-watcher initialization behind `#[cfg(not(target_os = "android"))]`
 - [x] Install Android Studio + NDK, configure env vars
 - [x] Add Android Rust targets
-- [x] `npm run tauri android init` (generates `gen/android/`)
-- [x] Confirm `npm run tauri android build` succeeds
+- [ ] `npm run tauri android init` (generates `gen/android/`)
+- [ ] Confirm `npm run tauri android build` succeeds
 - [ ] Basic smoke test: app launches, workspace setup, create a task
 - [ ] Set up macOS CI for iOS builds
 - [ ] `npm run tauri ios init` (generates `gen/ios/`)
@@ -1056,6 +1059,6 @@ This project is free and open-source software licensed under GPL v3.
 
 ---
 
-**Last Updated**: 2026-04-15
+**Last Updated**: 2026-04-17
 **Document Version**: 4.3
 **Status**: Ready to Implement - Milestone-Driven Plan
