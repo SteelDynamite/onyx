@@ -179,6 +179,13 @@ fn add_workspace(
     state: State<'_, Mutex<AppState>>,
 ) -> Result<(), String> {
     validate_workspace_path(&path)?;
+    // Ensure the path exists and is a valid workspace before persisting the
+    // config. Without this, calling add_workspace directly on a missing
+    // directory would save the workspace but every subsequent ensure_repo
+    // call would fail with "Path does not exist".
+    TaskRepository::init(PathBuf::from(&path))
+        .map(|_| ())
+        .map_err(|e| e.to_string())?;
     let mut s = lock_state(&state)?;
     let ws = WorkspaceConfig::new(name, PathBuf::from(&path));
     let id = s.config.add_workspace(ws);
