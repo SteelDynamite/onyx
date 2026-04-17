@@ -177,6 +177,8 @@ id: 550e8400-e29b-41d4-a716-446655440000
 status: backlog
 version: 3
 date: 2026-11-15T14:00:00Z
+has_time: true
+parent: 550e8400-e29b-41d4-a716-446655440001
 ---
 
 Task description and notes go here in **markdown** format.

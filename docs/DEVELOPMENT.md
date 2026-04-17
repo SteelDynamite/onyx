@@ -76,6 +76,7 @@ onyx/
 │       │       ├── screens/            # Full-page views
 │       │       ├── components/         # Reusable UI components
 │       │       ├── stores/             # Svelte state (app.svelte.ts)
+│       │       ├── dateFormat.ts       # Date formatting utilities
 │       │       └── types.ts           # TypeScript type definitions
 │       ├── tauri-plugin-credentials/   # Cross-platform credential storage plugin
 │       │   ├── Cargo.toml
