@@ -26,7 +26,10 @@ impl TaskRepository {
     // Task operations
     pub fn create_task(&mut self, list_id: Uuid, mut task: Task) -> Result<Task> {
         self.storage.write_task(list_id, &task)?;
-        task.version += 1;
+        // Mirror the saturating increment that FileSystemStorage applies to
+        // the on-disk frontmatter so the in-memory Task matches what was
+        // written and doesn't wrap at u64::MAX.
+        task.version = task.version.saturating_add(1);
         Ok(task)
     }
 
