@@ -448,12 +448,12 @@ pub fn store_credentials(domain: &str, username: &str, password: &str) -> Result
 
     let user_entry = keyring::Entry::new(&service, "username")
         .map_err(|e| Error::Credential(format!("Failed to create keyring entry: {}", e)))?;
-    user_entry.setpassword(username)
+    user_entry.set_password(username)
         .map_err(|e| Error::Credential(format!("Failed to store username: {}", e)))?;
 
     let pass_entry = keyring::Entry::new(&scoped_service, "password")
         .map_err(|e| Error::Credential(format!("Failed to create keyring entry: {}", e)))?;
-    pass_entry.setpassword(password)
+    pass_entry.set_password(password)
         .map_err(|e| Error::Credential(format!("Failed to store password: {}", e)))?;
 
     // Clean up legacy unscoped password entry if present
@@ -478,18 +478,18 @@ pub fn load_credentials(domain: &str) -> Result<(Zeroizing<String>, Zeroizing<St
     let user_entry = keyring::Entry::new(&service, "username")
         .map_err(|e| Error::Credential(format!("Failed to create keyring entry: {}", e)))?;
 
-    if let Ok(user) = user_entry.getpassword() {
+    if let Ok(user) = user_entry.get_password() {
         // Try scoped password key first (domain+username), fall back to legacy unscoped key
         let scoped_service = format!("com.onyx.webdav.{}::{}", domain, user);
         let found = keyring::Entry::new(&scoped_service, "password")
             .ok()
-            .and_then(|e| e.getpassword().ok())
+            .and_then(|e| e.get_password().ok())
             .map(|p| (p, false))
             .or_else(|| {
                 // Migration fallback: try legacy unscoped password entry
                 keyring::Entry::new(&service, "password")
                     .ok()
-                    .and_then(|e| e.getpassword().ok())
+                    .and_then(|e| e.get_password().ok())
                     .map(|p| (p, true))
             });
 
@@ -497,7 +497,7 @@ pub fn load_credentials(domain: &str) -> Result<(Zeroizing<String>, Zeroizing<St
             // Auto-migrate legacy credentials to scoped format
             if needs_migration {
                 if let Ok(entry) = keyring::Entry::new(&scoped_service, "password") {
-                    let _ = entry.setpassword(&pass);
+                    let _ = entry.set_password(&pass);
                 }
                 if let Ok(legacy) = keyring::Entry::new(&service, "password") {
                     let _ = legacy.delete_credential();
@@ -547,7 +547,7 @@ pub fn delete_credentials(domain: &str) -> Result<()> {
     // Load username first so we can delete the scoped password entry
     let username = keyring::Entry::new(&service, "username")
         .ok()
-        .and_then(|e| e.getpassword().ok());
+        .and_then(|e| e.get_password().ok());
 
     if let Some(user) = &username {
         let scoped_service = format!("com.onyx.webdav.{}::{}", domain, user);

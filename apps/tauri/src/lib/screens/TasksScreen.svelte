@@ -3,7 +3,7 @@
   import TaskItem from "../components/TaskItem.svelte";
   import TaskDetailView from "../components/TaskDetailView.svelte";
   import NewTaskInput, { newTaskState } from "../components/NewTaskInput.svelte";
-  import ConfirmDialog from "../components/ConfirmDialog.svelte";
+  import ConfirmDialog, { isConfirmDialogOpen } from "../components/ConfirmDialog.svelte";
   import SettingsScreen from "./SettingsScreen.svelte";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { platform } from "@tauri-apps/plugin-os";
@@ -18,10 +18,15 @@
   let parentTask = $derived(taskStack.length >= 1 ? app.tasks.find(t => t.id === taskStack[0]) ?? null : null);
   let subtaskDetail = $derived(taskStack.length >= 2 ? app.tasks.find(t => t.id === taskStack[1]) ?? null : null);
 
-  // Clear taskStack when the viewed task no longer exists (e.g. deleted or list switched)
+  // Clear taskStack when the viewed task no longer exists (e.g. deleted or list switched).
+  // Handles both the parent-gone case (clear entirely) and the subtask-gone case
+  // (collapse back to parent detail) so an externally deleted subtask doesn't leave
+  // the slider parked over a blank third panel.
   $effect(() => {
     if (taskStack.length > 0 && !parentTask) {
       taskStack = [];
+    } else if (taskStack.length >= 2 && !subtaskDetail) {
+      taskStack = taskStack.slice(0, 1);
     }
   });
 
@@ -48,6 +53,7 @@
   let showWorkspacePicker = $state(false);
 
   let newListName = $state("");
+  let newListInput = $state<HTMLInputElement | null>(null);
   let showCompleted = $state(false);
   let completedVisible = $state(false);
   let renamingListId = $state<string | null>(null);
@@ -71,6 +77,12 @@
     };
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
+  });
+
+  // Focus the new-list input when it appears. Svelte's native `autofocus`
+  // attribute is unreliable for conditional blocks, so focus imperatively.
+  $effect(() => {
+    if (showNewList && newListInput) newListInput.focus();
   });
 
 
@@ -128,6 +140,9 @@
 
   function handleKeydown(e: KeyboardEvent) {
     if (e.key !== "Escape") return;
+    // Defer to any open ConfirmDialog — it installs a capture-phase listener
+    // that dismisses itself; we must not also pop the task-detail view behind it.
+    if (isConfirmDialogOpen()) return;
     if (showSettings) { showSettings = false; return; }
     if (taskStack.length > 0) { closeDetail(); return; }
     if (showListMenu) { showListMenu = false; return; }
@@ -367,7 +382,7 @@
     <div class="flex-1 overflow-y-auto py-2">
       {#each app.lists as list (list.id)}
         <button
-          onclick={() => { app.selectList(list.id); taskStack = []; closeDrawer(); }}
+          onclick={() => { app.selectList(list.id); taskStack = []; showCompleted = false; completedVisible = false; closeDrawer(); }}
           class="group flex w-full items-center gap-2 px-5 py-2.5 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10 {list.id === app.activeListId ? 'font-bold' : ''}"
         >
           {#if list.id === app.activeListId}
@@ -388,6 +403,7 @@
           {#if showNewList}
             <div class="flex gap-2 px-1">
               <input
+                bind:this={newListInput}
                 type="text"
                 bind:value={newListName}
                 placeholder="List name"

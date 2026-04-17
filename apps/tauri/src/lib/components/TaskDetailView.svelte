@@ -25,6 +25,20 @@
     return () => clearTimeout(saveTimer);
   });
 
+  // Re-sync local editor state when the task prop's content changes from elsewhere
+  // (sync pull, external file edit). Skip the reset while the user is actively
+  // editing an input so we don't clobber in-progress typing.
+  $effect(() => {
+    const incomingTitle = task.title;
+    const incomingDesc = task.description;
+    const active = document.activeElement;
+    const editing = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement;
+    if (!editing) {
+      if (incomingTitle !== title) title = incomingTitle;
+      if (incomingDesc !== description) description = incomingDesc;
+    }
+  });
+
   let otherLists = $derived(app.lists.filter((l) => l.id !== app.activeListId));
 
   function handleHeaderMouseDown(e: MouseEvent) {
@@ -64,10 +78,12 @@
 
   async function executeDelete() {
     confirmDelete = false;
-    // Cascade: delete subtasks first
-    for (const s of subtasks) await app.deleteTask(s.id);
-    await app.deleteTask(task.id);
-    onback();
+    // Cascade: delete subtasks first. Bail out on first failure so we don't
+    // remove the parent while orphaning subtasks; the error is already surfaced.
+    for (const s of subtasks) {
+      if (!(await app.deleteTask(s.id))) return;
+    }
+    if (await app.deleteTask(task.id)) onback();
   }
 
   function handleMenuClickOutside(e: MouseEvent) {

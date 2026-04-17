@@ -71,7 +71,9 @@
     const selected = await open({ directory: true, multiple: false });
     if (!selected) return;
     const folder = selected as string;
-    const parts = folder.replace(/\\/g, "/").split("/");
+    // Strip trailing separators before splitting so a path like "/home/me/Tasks/"
+    // yields "Tasks" instead of an empty tail that falls through to "workspace".
+    const parts = folder.replace(/[\\/]+$/, "").split(/[\\/]/);
     const wsName = parts[parts.length - 1] || "workspace";
     await app.addWorkspace(wsName, folder);
   }

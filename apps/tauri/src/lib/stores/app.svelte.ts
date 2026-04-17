@@ -95,7 +95,6 @@ let groupedPendingTasks = $derived.by((): TaskGroup[] | null => {
   tomorrow.sort(sortByDue);
 
   const groups: TaskGroup[] = [];
-  if (noDate.length) groups.push({ label: "No Date", tasks: noDate, date: null });
   if (overdue.length) groups.push({ label: "Overdue", tasks: overdue, date: null });
   if (today.length) groups.push({ label: "Today", tasks: today, date: todayStart });
   if (tomorrow.length) groups.push({ label: "Tomorrow", tasks: tomorrow, date: tomorrowStart });
@@ -108,6 +107,8 @@ let groupedPendingTasks = $derived.by((): TaskGroup[] | null => {
       : { weekday: "short", month: "short", day: "numeric" };
     groups.push({ label: date.toLocaleDateString(undefined, opts), tasks, date });
   }
+
+  if (noDate.length) groups.push({ label: "No Date", tasks: noDate, date: null });
 
   return groups;
 });
@@ -366,13 +367,15 @@ async function reorderTask(taskId: string, newPosition: number) {
   }
 }
 
-async function deleteTask(taskId: string) {
-  if (!activeListId) return;
+async function deleteTask(taskId: string): Promise<boolean> {
+  if (!activeListId) return false;
   try {
     await invoke("delete_task", { listId: activeListId, taskId });
     tasks = tasks.filter((t) => t.id !== taskId);
+    return true;
   } catch (e) {
     error = String(e);
+    return false;
   }
 }
 
