@@ -525,22 +525,10 @@ async function addGoogleTasksWorkspace(
 
 async function forgetMissingWorkspace() {
   if (!missingWorkspace) return;
+  // removeWorkspace handles switching to the next available workspace (or
+  // falling back to the setup screen when none remain); just delegate.
   await removeWorkspace(missingWorkspace);
   missingWorkspace = null;
-  config = await invoke<AppConfig>("get_config");
-  if (hasWorkspace) {
-    // Switch to the next available workspace
-    const nextName = Object.keys(config!.workspaces)[0];
-    if (nextName) {
-      await switchWorkspace(nextName);
-      screen = "tasks";
-      return;
-    }
-  }
-  screen = "setup";
-  lists = [];
-  tasks = [];
-  activeListId = null;
 }
 
 function setScreen(s: Screen) {
