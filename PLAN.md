@@ -224,6 +224,8 @@ impl TaskRepository {
     pub fn get_lists(&self) -> Result<Vec<TaskList>>;
     pub fn get_list(&self, list_id: Uuid) -> Result<TaskList>;
     pub fn delete_list(&mut self, id: Uuid) -> Result<()>;
+    pub fn rename_list(&mut self, list_id: Uuid, new_name: String) -> Result<()>;
+    pub fn move_task(&mut self, from_list_id: Uuid, to_list_id: Uuid, task_id: Uuid) -> Result<()>;
 
     // Task ordering (modifies .listdata.json)
     pub fn reorder_task(&mut self, list_id: Uuid, task_id: Uuid, new_position: usize) -> Result<()>;
@@ -754,7 +756,7 @@ WorkspaceConfig {
 - [x] Settings popup overlay (WebDAV config, theme selector, window decorations)
 - [x] Per-workspace theme system (System default, Light, Dark, Nord, Dracula, Solarized Dark, Black and Gold, Ink)
 - [x] Animated completed section show/hide
-- [x] Move task between lists (inline list in task kebab menu, no submenu)
+- [x] Move task between lists (kebab menu → "Move to..." inline list in task detail view, not a submenu)
 - [x] Optional time on due dates (`has_time: bool` field on Task with `#[serde(default)]` for backward compat; replaces the hours==0 heuristic)
 - [x] Due date picker/editor (DateTimePicker component in both new task toast + task detail view)
 - [x] WebDAV setup flow with credentials (settings auto-populates URL/username/password from config + keychain on open)
