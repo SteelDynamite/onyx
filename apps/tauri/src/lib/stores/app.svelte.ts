@@ -395,7 +395,11 @@ async function triggerSync() {
     await loadLists();
   } catch (e) {
     const msg = String(e);
-    const isTransient = /timeout|connect|network|unreachable|refused/i.test(msg);
+    // Narrow phrases so that a legitimate server-side error containing a
+    // word like "network" or "refused" in its description isn't silently
+    // swallowed as an offline blip. Only treat obvious connectivity failures
+    // as transient.
+    const isTransient = /(^|\W)(timed? out|timeout|connection (refused|reset|timed out|aborted)|connect error|network (is )?unreachable|no route to host|host (not found|is unreachable)|dns|enotfound|econnrefused|etimedout|ehostunreach|enetunreach)(\W|$)/i.test(msg);
     syncStatus = isTransient ? "offline" : "error";
     // Only show the error banner for non-transient failures; connectivity issues just update the status dot
     if (!isTransient) error = msg;
