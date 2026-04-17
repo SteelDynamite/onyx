@@ -184,11 +184,17 @@ async function removeWorkspace(id: string) {
   try {
     await invoke("remove_workspace", { id });
     config = await invoke<AppConfig>("get_config");
-    if (!hasWorkspace) {
+    activeListId = null;
+    tasks = [];
+    lists = [];
+    // Switch to the next available workspace rather than dumping the user
+    // to the setup screen when they still have other workspaces.
+    const remaining = Object.keys(config?.workspaces ?? {});
+    if (remaining.length > 0) {
+      await switchWorkspace(remaining[0]);
+      screen = "tasks";
+    } else {
       screen = "setup";
-      lists = [];
-      tasks = [];
-      activeListId = null;
     }
   } catch (e) {
     error = String(e);
