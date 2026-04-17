@@ -119,13 +119,26 @@ pub fn edit(task_id_str: String, workspace: Option<String>) -> Result<()> {
     let (list_id, task) = find_task(&lists, task_id)
         .ok_or_else(|| anyhow::anyhow!("Task not found: {}", task_id_str))?;
 
-    // Create temporary file with task content
+    // Create temporary file with task content. On Unix, open with 0600 so
+    // other local users on a shared system can't read the task body off /tmp
+    // while the editor is running.
     let temp_dir = std::env::temp_dir();
     let temp_file = temp_dir.join(format!("onyx-{}.md", task.id));
 
-    // Write current task content to temp file
     let content = format!("# {}\n\n{}", task.title, task.description);
-    std::fs::write(&temp_file, content)?;
+    {
+        use std::io::Write;
+        let mut opts = std::fs::OpenOptions::new();
+        opts.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
+        let mut f = opts.open(&temp_file)
+            .with_context(|| format!("Failed to create {}", temp_file.display()))?;
+        f.write_all(content.as_bytes())?;
+    }
 
     // Get editor from environment
     let editor = std::env::var("EDITOR").unwrap_or_else(|_| {
