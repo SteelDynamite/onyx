@@ -420,14 +420,23 @@ fn delete_task(
     let lid = Uuid::parse_str(&list_id).map_err(|e| e.to_string())?;
     let tid = Uuid::parse_str(&task_id).map_err(|e| e.to_string())?;
     let repo = repo_mut(&mut s)?;
-    // Cascade-delete subtasks first
+    // Cascade-delete the full descendant subtree (not just direct children)
+    // so deleting a parent can't leave grandchildren orphaned with a
+    // parent_id pointing at a deleted task.
     let all_tasks = repo.list_tasks(lid).map_err(|e| e.to_string())?;
-    let child_ids: Vec<Uuid> = all_tasks
-        .iter()
-        .filter(|t| t.parent_id == Some(tid))
-        .map(|t| t.id)
-        .collect();
-    for child_id in child_ids {
+    let mut to_delete: Vec<Uuid> = Vec::new();
+    let mut frontier: Vec<Uuid> = vec![tid];
+    while let Some(parent) = frontier.pop() {
+        for t in &all_tasks {
+            if t.parent_id == Some(parent) && !to_delete.contains(&t.id) {
+                to_delete.push(t.id);
+                frontier.push(t.id);
+            }
+        }
+    }
+    // Delete children before the parent so a mid-cascade failure doesn't
+    // leave the parent removed but descendants stranded.
+    for child_id in to_delete {
         repo.delete_task(lid, child_id).map_err(|e| format!("Failed to delete subtask {}: {}", child_id, e))?;
     }
     repo.delete_task(lid, tid)
