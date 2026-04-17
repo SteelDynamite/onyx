@@ -657,7 +657,16 @@
           {#if app.lists.length === 0}
             <div class="flex h-full flex-col items-center justify-center p-8 text-center">
               <p class="text-lg font-medium opacity-60">No lists yet</p>
-              <p class="mt-1 text-sm opacity-40">Tap the list name above to create one</p>
+              {#if app.isGoogleTasks}
+                <p class="mt-1 text-sm opacity-40">Lists will appear after your next sync.</p>
+              {:else}
+                <button
+                  onclick={() => { showDrawer = true; showNewList = true; }}
+                  class="mt-4 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover"
+                >
+                  Create a list
+                </button>
+              {/if}
             </div>
           {:else if !app.activeListId}
             <div class="flex h-full items-center justify-center opacity-40">
