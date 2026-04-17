@@ -2,6 +2,8 @@
 
 A **local-first, cross-platform tasks application** built with Rust. Inspired by Google Tasks, designed for speed and flexibility.
 
+![Onyx setup screen](screenshot.png)
+
 ## Core Principles
 
 - **Local-First**: Your data, your folder, your control
@@ -21,7 +23,10 @@ onyx/
 │   └── onyx-cli/           # CLI frontend
 ├── apps/
 │   └── tauri/                    # Tauri v2 GUI (Svelte 5 + Tailwind CSS 4)
+│       └── tauri-plugin-credentials/  # Cross-platform credential storage plugin
 └── docs/
+    ├── API.md                    # Core library API reference
+    └── DEVELOPMENT.md            # Development guide
 ```
 
 ## Project Status
@@ -29,7 +34,7 @@ onyx/
 - **Phase 1** (Core + CLI): Complete
 - **Phase 2** (WebDAV Sync): Complete — backend, CLI, and GUI all wired
 - **Phase 3** (GUI MVP): Complete
-- **Phase 4** (Mobile): Tauri Android cfg-gated, needs `tauri android init` + build
+- **Phase 4** (Mobile): In progress — Android preliminaries done (file-watcher gating, `tauri-plugin-credentials`, safe area insets, Android targets configured); needs `tauri android init`, build verification, and iOS setup
 
 ### Core Library (`onyx-core`)
 - Data models (Task, TaskList, AppConfig, WorkspaceConfig)
@@ -59,13 +64,15 @@ onyx/
 - Due date picker/editor with optional time
 - Subtask hierarchy with three-panel slide navigation
 - Move tasks between lists
-- List rename, group-by-date toggle, delete completed tasks
+- List rename, workspace rename, group-by-date toggle, delete completed tasks
 - Keyboard shortcuts (Escape priority chain)
 - WebDAV setup flow with credential auto-population
 - File watcher (auto-reloads on external changes)
 - Auto-sync with configurable interval, status indicators
 - Swipe gestures on mobile (swipe to toggle completion)
 - Custom confirmation dialogs
+- Safe area insets for mobile (viewport-fit=cover)
+- Accessibility: ARIA labels/roles, keyboard handlers, `prefers-reduced-motion` support
 - Desktop packaging (Linux: AppImage + .deb; Windows: MSI)
 
 ## Development Setup
@@ -211,8 +218,8 @@ cargo test -- --nocapture
 
 ## What's Next?
 
-- **Phase 4**: Mobile support (iOS & Android via Tauri v2 mobile)
-- **Phase 5**: GUI advanced features (rich markdown editor, search/filter)
+- **Phase 4** (in progress): Complete Android build (`tauri android init` + verification), iOS setup on macOS CI
+- **Phase 5**: GUI advanced features (rich markdown editor, search/filter, change storage folder)
 - **Phase 6**: Mobile polish and platform-specific integrations
 - **Phase 7**: Google Tasks importer and unique features
 
