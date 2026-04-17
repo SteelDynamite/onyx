@@ -3,6 +3,7 @@ mod output;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use colored::Colorize;
 use commands::*;
 
 #[derive(Parser)]
@@ -197,7 +198,24 @@ enum GroupCommands {
     },
 }
 
-fn main() -> Result<()> {
+fn main() {
+    match run() {
+        Ok(()) => {}
+        Err(e) => {
+            // Print user-friendly error chain (no backtrace). Programming-bug
+            // panics still surface through their default handler.
+            eprintln!("{}: {}", "Error".red().bold(), e);
+            let mut cause = e.source();
+            while let Some(c) = cause {
+                eprintln!("  caused by: {}", c);
+                cause = c.source();
+            }
+            std::process::exit(1);
+        }
+    }
+}
+
+fn run() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
