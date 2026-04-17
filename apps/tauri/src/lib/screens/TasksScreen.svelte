@@ -100,7 +100,12 @@
 
   async function executeDeleteCompleted() {
     confirmDeleteCompleted = false;
-    for (var t of app.completedTasks) await app.deleteTask(t.id);
+    // Snapshot targets first — deletes mutate app.completedTasks reactively.
+    // Bail on first failure so we don't silently leave a partial delete.
+    const targets = [...app.completedTasks];
+    for (const t of targets) {
+      if (!(await app.deleteTask(t.id))) return;
+    }
   }
 
   function promptDeleteList() {
