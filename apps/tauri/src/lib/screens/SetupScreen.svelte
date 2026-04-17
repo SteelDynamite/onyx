@@ -5,6 +5,7 @@
   import { app } from "../stores/app.svelte";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { platform } from "@tauri-apps/plugin-os";
+  import { workspaceNameFromPath } from "../paths";
 
   let { cancellable = false }: { cancellable?: boolean } = $props();
 
@@ -71,9 +72,7 @@
     const selected = await open({ directory: true, multiple: false });
     if (!selected) return;
     const folder = selected as string;
-    const parts = folder.replace(/\\/g, "/").split("/");
-    const wsName = parts[parts.length - 1] || "workspace";
-    await app.addWorkspace(wsName, folder);
+    await app.addWorkspace(workspaceNameFromPath(folder), folder);
   }
 
   // ── WebDAV handlers ───────────────────────────────────────────────
