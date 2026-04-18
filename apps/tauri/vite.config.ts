@@ -26,6 +26,6 @@ export default defineConfig({
     server: { deps: { inline: ["@testing-library/svelte"] } },
   },
   resolve: {
-    conditions: process.env.VITEST ? ["browser"] : [],
+    conditions: ["browser"],
   },
 });
