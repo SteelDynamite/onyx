@@ -381,7 +381,9 @@ impl Storage for FileSystemStorage {
         }
 
         let content = self.write_markdown_with_frontmatter(task)?;
-        fs::write(&task_path, content)?;
+        // Atomic write: a crash mid-write must not leave a truncated .md file
+        // that then fails YAML parsing on the next list_tasks/read_task.
+        atomic_write(&task_path, content.as_bytes())?;
 
         // Update list metadata to include this task in task_order if not already present
         let mut list_metadata = self.read_list_metadata(list_id)?;

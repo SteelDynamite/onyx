@@ -120,7 +120,12 @@
   async function executeDeleteCompletedSubtasks() {
     confirmDeleteCompleted = false;
     showSubtaskMenu = false;
-    for (const s of completedSubtasks) await app.deleteTask(s.id);
+    // Snapshot — completedSubtasks is reactive and shrinks as we delete.
+    // Bail on first failure so we don't silently leave a partial delete.
+    const targets = [...completedSubtasks];
+    for (const s of targets) {
+      if (!(await app.deleteTask(s.id))) return;
+    }
   }
 
   function handleSubtaskMenuClickOutside(e: MouseEvent) {

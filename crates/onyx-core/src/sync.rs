@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Sha256, Digest};
 use uuid::Uuid;
 use crate::error::{Error, Result};
-use crate::storage::{ListMetadata, TaskFrontmatter};
+use crate::storage::{atomic_write, ListMetadata, TaskFrontmatter};
 use crate::webdav::WebDavClient;
 
 /// File-based lock to prevent concurrent sync operations on the same workspace.
@@ -743,8 +743,9 @@ async fn execute_action(
             } else {
                 report(&format!("  ! Conflict: remote wins for {}, recovering local as duplicate", path));
 
-                // Remote wins: overwrite local with remote content
-                std::fs::write(&local_path, &remote_data)?;
+                // Remote wins: overwrite local with remote content. Atomic
+                // so a crash mid-sync cannot leave a truncated file behind.
+                atomic_write(&local_path, &remote_data)?;
                 let modified = std::fs::metadata(&local_path).ok()
                     .and_then(|m| m.modified().ok())
                     .map(|t| { let dt: DateTime<Utc> = t.into(); dt.to_rfc3339() });
@@ -775,7 +776,7 @@ async fn execute_action(
                         let list_dir = workspace_path.join(parts[0]);
                         let dup_filename = format!("{}.md", new_id);
                         let dup_path = list_dir.join(&dup_filename);
-                        std::fs::write(&dup_path, &new_content)?;
+                        atomic_write(&dup_path, new_content.as_bytes())?;
 
                         // Insert new task adjacent to original in .listdata.json.
                         // If metadata update fails, remove the duplicate file to
@@ -791,7 +792,7 @@ async fn execute_action(
                                     .unwrap_or(metadata.task_order.len());
                                 metadata.task_order.insert(insert_pos, new_id);
                                 let json = serde_json::to_string_pretty(&metadata)?;
-                                std::fs::write(&listdata_path, json)?;
+                                atomic_write(&listdata_path, json.as_bytes())?;
                                 Ok(())
                             })();
                             if let Err(e) = metadata_updated {
@@ -816,7 +817,7 @@ async fn execute_action(
             if let Some(parent) = local_path.parent() {
                 std::fs::create_dir_all(parent)?;
             }
-            std::fs::write(&local_path, &data)?;
+            atomic_write(&local_path, &data)?;
 
             // Record remote's last_modified so next diff won't see a timestamp mismatch
             let modified = remote_meta.get(path.as_str()).and_then(|r| r.last_modified.clone());
@@ -1136,8 +1137,7 @@ mod tests {
     #[test]
     fn test_sync_state_save_load_roundtrip() {
         let temp_dir = TempDir::new().unwrap();
-        let mut state = SyncState::default();
-        state.last_sync = Some(Utc::now());
+        let mut state = SyncState { last_sync: Some(Utc::now()), ..Default::default() };
         state.record_file("test.md", "abc123", Some("2026-01-01T00:00:00Z"), 42);
 
         state.save(temp_dir.path()).unwrap();

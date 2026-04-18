@@ -26,7 +26,10 @@ impl TaskRepository {
     // Task operations
     pub fn create_task(&mut self, list_id: Uuid, mut task: Task) -> Result<Task> {
         self.storage.write_task(list_id, &task)?;
-        task.version += 1;
+        // Mirror the saturating increment that FileSystemStorage applies to
+        // the on-disk frontmatter so the in-memory Task matches what was
+        // written and doesn't wrap at u64::MAX.
+        task.version = task.version.saturating_add(1);
         Ok(task)
     }
 
@@ -154,12 +157,26 @@ mod tests {
 
         // Create a task
         let task = Task::new("Test Task".to_string());
-        let created_task = repo.create_task(list.id, task).unwrap();
+        let _ = repo.create_task(list.id, task).unwrap();
 
         // List tasks
         let tasks = repo.list_tasks(list.id).unwrap();
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].title, "Test Task");
+    }
+
+    #[test]
+    fn test_create_task_saturates_version_at_max() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut repo = TaskRepository::init(temp_dir.path().to_path_buf()).unwrap();
+        let list = repo.create_list("L".to_string()).unwrap();
+
+        // Simulate a task that is already at u64::MAX. A plain `+=` would
+        // overflow — saturating_add must clamp.
+        let mut task = Task::new("max".to_string());
+        task.version = u64::MAX;
+        let created = repo.create_task(list.id, task).unwrap();
+        assert_eq!(created.version, u64::MAX);
     }
 
     #[test]

@@ -58,6 +58,7 @@
   let completedVisible = $state(false);
   let renamingListId = $state<string | null>(null);
   let renameValue = $state("");
+  let renameListInput = $state<HTMLInputElement | null>(null);
   let showListMenu = $state(false);
   let showSubtasks = $state(false);
   let confirmDeleteList = $state(false);
@@ -85,6 +86,14 @@
     if (showNewList && newListInput) newListInput.focus();
   });
 
+  // Same imperative-focus trick for the inline list-rename input.
+  $effect(() => {
+    if (renamingListId && renameListInput) {
+      renameListInput.focus();
+      renameListInput.select();
+    }
+  });
+
 
   async function handleNewList() {
     if (!newListName.trim()) return;
@@ -100,7 +109,12 @@
 
   async function executeDeleteCompleted() {
     confirmDeleteCompleted = false;
-    for (var t of app.completedTasks) await app.deleteTask(t.id);
+    // Snapshot targets first — deletes mutate app.completedTasks reactively.
+    // Bail on first failure so we don't silently leave a partial delete.
+    const targets = [...app.completedTasks];
+    for (const t of targets) {
+      if (!(await app.deleteTask(t.id))) return;
+    }
   }
 
   function promptDeleteList() {
@@ -626,11 +640,11 @@
           {#if renamingListId === app.activeListId}
             <input
               type="text"
+              bind:this={renameListInput}
               bind:value={renameValue}
               class="w-full bg-transparent text-xl font-bold outline-none"
               onkeydown={(e) => { if (e.key === "Enter") handleRenameList(); if (e.key === "Escape") renamingListId = null; }}
               onblur={handleRenameList}
-              autofocus
             />
           {:else}
             <p class="text-xl font-bold">{app.activeList?.title ?? "Tasks"}</p>
@@ -643,7 +657,16 @@
           {#if app.lists.length === 0}
             <div class="flex h-full flex-col items-center justify-center p-8 text-center">
               <p class="text-lg font-medium opacity-60">No lists yet</p>
-              <p class="mt-1 text-sm opacity-40">Tap the list name above to create one</p>
+              {#if app.isGoogleTasks}
+                <p class="mt-1 text-sm opacity-40">Lists will appear after your next sync.</p>
+              {:else}
+                <button
+                  onclick={() => { showDrawer = true; showNewList = true; }}
+                  class="mt-4 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover"
+                >
+                  Create a list
+                </button>
+              {/if}
             </div>
           {:else if !app.activeListId}
             <div class="flex h-full items-center justify-center opacity-40">

@@ -10,10 +10,13 @@ import type {
 } from "../types";
 import { groupTasksByDate, type TaskGroup } from "../grouping";
 
-// Listen for file system changes from the backend watcher.
+// Listen for file system changes from the backend watcher. Guard against
+// firing while the user is on the setup/missing screens — loadLists would
+// fail (no workspace) and a debouncedSync against a non-synced workspace
+// would be wasted work.
 listen("fs-changed", () => {
+  if (!hasWorkspace || screen !== "tasks") return;
   loadLists();
-  // Debounced sync for WebDAV workspaces on local file changes
   if (isSyncedWorkspace) debouncedSync();
 });
 
@@ -184,11 +187,17 @@ async function removeWorkspace(id: string) {
   try {
     await invoke("remove_workspace", { id });
     config = await invoke<AppConfig>("get_config");
-    if (!hasWorkspace) {
+    activeListId = null;
+    tasks = [];
+    lists = [];
+    // Switch to the next available workspace rather than dumping the user
+    // to the setup screen when they still have other workspaces.
+    const remaining = Object.keys(config?.workspaces ?? {});
+    if (remaining.length > 0) {
+      await switchWorkspace(remaining[0]);
+      screen = "tasks";
+    } else {
       screen = "setup";
-      lists = [];
-      tasks = [];
-      activeListId = null;
     }
   } catch (e) {
     error = String(e);
@@ -255,7 +264,13 @@ async function deleteList(id: string) {
   }
 }
 
-async function createTask(title: string, description?: string, parentId?: string): Promise<Task | null> {
+async function createTask(
+  title: string,
+  description?: string,
+  parentId?: string,
+  date?: string | null,
+  hasTime?: boolean,
+): Promise<Task | null> {
   if (!activeListId) return null;
   try {
     const task = await invoke<Task>("create_task", {
@@ -263,6 +278,8 @@ async function createTask(title: string, description?: string, parentId?: string
       title,
       description: description ?? "",
       parentId: parentId ?? null,
+      date: date ?? null,
+      hasTime: hasTime ?? false,
     });
     tasks = parentId ? [task, ...tasks] : [...tasks, task];
     error = null;
@@ -381,7 +398,11 @@ async function triggerSync() {
     await loadLists();
   } catch (e) {
     const msg = String(e);
-    const isTransient = /timeout|connect|network|unreachable|refused/i.test(msg);
+    // Narrow phrases so that a legitimate server-side error containing a
+    // word like "network" or "refused" in its description isn't silently
+    // swallowed as an offline blip. Only treat obvious connectivity failures
+    // as transient.
+    const isTransient = /(^|\W)(timed? out|timeout|connection (refused|reset|timed out|aborted)|connect error|network (is )?unreachable|no route to host|host (not found|is unreachable)|dns|enotfound|econnrefused|etimedout|ehostunreach|enetunreach)(\W|$)/i.test(msg);
     syncStatus = isTransient ? "offline" : "error";
     // Only show the error banner for non-transient failures; connectivity issues just update the status dot
     if (!isTransient) error = msg;
@@ -519,22 +540,10 @@ async function addGoogleTasksWorkspace(
 
 async function forgetMissingWorkspace() {
   if (!missingWorkspace) return;
+  // removeWorkspace handles switching to the next available workspace (or
+  // falling back to the setup screen when none remain); just delegate.
   await removeWorkspace(missingWorkspace);
   missingWorkspace = null;
-  config = await invoke<AppConfig>("get_config");
-  if (hasWorkspace) {
-    // Switch to the next available workspace
-    const nextName = Object.keys(config!.workspaces)[0];
-    if (nextName) {
-      await switchWorkspace(nextName);
-      screen = "tasks";
-      return;
-    }
-  }
-  screen = "setup";
-  lists = [];
-  tasks = [];
-  activeListId = null;
 }
 
 function setScreen(s: Screen) {

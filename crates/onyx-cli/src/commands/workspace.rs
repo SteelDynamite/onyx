@@ -30,11 +30,21 @@ pub fn add(name: String, path: String) -> Result<()> {
     // Add workspace
     let id = config.add_workspace(WorkspaceConfig::new(name.clone(), path_buf.clone()));
 
+    // Select the new workspace as current when none was previously set, so the
+    // very next command doesn't fail with "No workspace set".
+    let made_current = config.current_workspace.is_none();
+    if made_current {
+        config.set_current_workspace(id.clone())?;
+    }
+
     // Save config
     save_config(&config)?;
 
     output::success(&format!("Added workspace \"{}\" ({}) at {}", name, &id[..8], path_buf.display()));
     output::success("Created default list \"My Tasks\"");
+    if made_current {
+        output::success(&format!("Set \"{}\" as the current workspace", name));
+    }
 
     Ok(())
 }
@@ -64,15 +74,20 @@ pub fn list() -> Result<()> {
     Ok(())
 }
 
-/// Resolve a workspace name to its ID. Errors if not found or ambiguous.
-fn resolve_name(config: &onyx_core::config::AppConfig, name: &str) -> Result<String> {
+/// Resolve a user-supplied identifier to a workspace ID. Accepts either the
+/// display name or the UUID. Errors if not found or ambiguous.
+fn resolve_name(config: &onyx_core::config::AppConfig, identifier: &str) -> Result<String> {
+    // Direct UUID hit on the map key — unambiguous.
+    if config.workspaces.contains_key(identifier) {
+        return Ok(identifier.to_string());
+    }
     let matches: Vec<_> = config.workspaces.iter()
-        .filter(|(_, ws)| ws.name == name)
+        .filter(|(_, ws)| ws.name == identifier)
         .collect();
     match matches.len() {
-        0 => anyhow::bail!("Workspace '{}' not found", name),
+        0 => anyhow::bail!("Workspace '{}' not found", identifier),
         1 => Ok(matches[0].0.clone()),
-        n => anyhow::bail!("Ambiguous: {} workspaces named '{}'. Use the workspace ID instead.", n, name),
+        n => anyhow::bail!("Ambiguous: {} workspaces named '{}'. Use the workspace ID instead.", n, identifier),
     }
 }
 

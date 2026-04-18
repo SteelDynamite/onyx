@@ -15,14 +15,29 @@
   let webdavUser = $state("");
   let webdavPass = $state("");
   let testStatus = $state<"idle" | "testing" | "ok" | "fail">("idle");
+  let credsLoaded = $state(false);
 
   let renaming = $state(false);
   let renameValue = $state("");
+  let renameInput = $state<HTMLInputElement | null>(null);
   let showKebab = $state(false);
   let confirmRename = $state(false);
 
+  // Imperative focus — Svelte's native autofocus attribute is unreliable
+  // for inputs that appear only via conditional blocks.
   $effect(() => {
-    if (!ws?.webdav_url) return;
+    if (renaming && renameInput) {
+      renameInput.focus();
+      renameInput.select();
+    }
+  });
+
+  // Load stored credentials exactly once for this workspace. Previously this
+  // ran on every `ws.webdav_url` change, which silently clobbered in-progress
+  // user edits whenever any other setting updated the config.
+  $effect(() => {
+    if (credsLoaded || !ws?.webdav_url) return;
+    credsLoaded = true;
     webdavUrl = ws.webdav_url;
     try {
       const domain = new URL(ws.webdav_url).hostname;
@@ -34,6 +49,12 @@
       });
     } catch {}
   });
+
+  // Any edit invalidates a prior test so users can't Save a config they
+  // haven't validated since changing it.
+  function markDirty() {
+    if (testStatus !== "idle") testStatus = "idle";
+  }
 
   async function testConnection() {
     testStatus = "testing";
@@ -51,6 +72,12 @@
 
   async function saveWebdav() {
     if (!webdavUrl.trim()) return;
+    // Require a successful test so a typo'd URL can't silently point the
+    // workspace at a dead server.
+    if (testStatus !== "ok") {
+      await testConnection();
+      if (testStatus !== "ok") return;
+    }
     await invoke("set_webdav_config", {
       workspaceId,
       webdavUrl: webdavUrl.trim(),
@@ -116,11 +143,11 @@
     {#if renaming}
       <input
         type="text"
+        bind:this={renameInput}
         bind:value={renameValue}
         class="w-full bg-transparent text-xl font-bold outline-none"
         onkeydown={(e) => { if (e.key === "Enter") handleRename(); if (e.key === "Escape") { renaming = false; } }}
         onblur={handleRename}
-        autofocus
       />
     {:else}
       <p class="text-xl font-bold">{ws?.name}</p>
@@ -172,6 +199,7 @@
         <input
           type="url"
           bind:value={webdavUrl}
+          oninput={markDirty}
           placeholder="https://dav.example.com/tasks/"
           class="mb-3 w-full rounded-lg border border-border-light bg-transparent px-3 py-2 text-sm outline-none focus:border-primary dark:border-border-dark"
         />
@@ -180,6 +208,7 @@
         <input
           type="text"
           bind:value={webdavUser}
+          oninput={markDirty}
           class="mb-3 w-full rounded-lg border border-border-light bg-transparent px-3 py-2 text-sm outline-none focus:border-primary dark:border-border-dark"
         />
 
@@ -187,6 +216,7 @@
         <input
           type="password"
           bind:value={webdavPass}
+          oninput={markDirty}
           class="mb-4 w-full rounded-lg border border-border-light bg-transparent px-3 py-2 text-sm outline-none focus:border-primary dark:border-border-dark"
         />
 
@@ -196,7 +226,7 @@
             disabled={!webdavUrl.trim()}
             class="rounded-lg border border-border-light px-4 py-2 text-sm font-medium hover:bg-black/5 disabled:opacity-40 dark:border-border-dark dark:hover:bg-white/10"
           >
-            {testStatus === "testing" ? "Testing..." : testStatus === "ok" ? "Connected" : testStatus === "fail" ? "Failed -- Retry" : "Test Connection"}
+            {testStatus === "testing" ? "Testing…" : testStatus === "ok" ? "Connected" : testStatus === "fail" ? "Failed — Retry" : "Test Connection"}
           </button>
           <button
             onclick={saveWebdav}

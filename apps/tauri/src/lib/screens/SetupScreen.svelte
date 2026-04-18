@@ -77,20 +77,6 @@
 
   // ── WebDAV handlers ───────────────────────────────────────────────
 
-  async function testConnection() {
-    testStatus = "testing";
-    try {
-      await invoke("test_webdav_connection", {
-        url: webdavUrl,
-        username: webdavUser,
-        password: webdavPass,
-      });
-      testStatus = "ok";
-    } catch {
-      testStatus = "fail";
-    }
-  }
-
   async function connectAndBrowse() {
     testStatus = "testing";
     try {

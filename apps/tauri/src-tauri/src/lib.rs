@@ -179,6 +179,13 @@ fn add_workspace(
     state: State<'_, Mutex<AppState>>,
 ) -> Result<(), String> {
     validate_workspace_path(&path)?;
+    // Ensure the path exists and is a valid workspace before persisting the
+    // config. Without this, calling add_workspace directly on a missing
+    // directory would save the workspace but every subsequent ensure_repo
+    // call would fail with "Path does not exist".
+    TaskRepository::init(PathBuf::from(&path))
+        .map(|_| ())
+        .map_err(|e| e.to_string())?;
     let mut s = lock_state(&state)?;
     let ws = WorkspaceConfig::new(name, PathBuf::from(&path));
     let id = s.config.add_workspace(ws);
@@ -367,6 +374,8 @@ fn create_task(
     title: String,
     description: Option<String>,
     parent_id: Option<String>,
+    date: Option<chrono::DateTime<chrono::Utc>>,
+    has_time: Option<bool>,
     state: State<'_, Mutex<AppState>>,
 ) -> Result<Task, String> {
     let mut s = lock_state(&state)?;
@@ -381,6 +390,11 @@ fn create_task(
         let parent_uuid = Uuid::parse_str(&pid).map_err(|e| e.to_string())?;
         task.parent_id = Some(parent_uuid);
     }
+    // Accept the date fields at creation time so callers don't have to do a
+    // second update() round-trip just to attach a date — which previously
+    // dropped the date entirely if the follow-up update failed.
+    task.date = date;
+    task.has_time = has_time.unwrap_or(false);
     repo_mut(&mut s)?
         .create_task(id, task)
         .map_err(|e| e.to_string())
@@ -413,14 +427,23 @@ fn delete_task(
     let lid = Uuid::parse_str(&list_id).map_err(|e| e.to_string())?;
     let tid = Uuid::parse_str(&task_id).map_err(|e| e.to_string())?;
     let repo = repo_mut(&mut s)?;
-    // Cascade-delete subtasks first
+    // Cascade-delete the full descendant subtree (not just direct children)
+    // so deleting a parent can't leave grandchildren orphaned with a
+    // parent_id pointing at a deleted task.
     let all_tasks = repo.list_tasks(lid).map_err(|e| e.to_string())?;
-    let child_ids: Vec<Uuid> = all_tasks
-        .iter()
-        .filter(|t| t.parent_id == Some(tid))
-        .map(|t| t.id)
-        .collect();
-    for child_id in child_ids {
+    let mut to_delete: Vec<Uuid> = Vec::new();
+    let mut frontier: Vec<Uuid> = vec![tid];
+    while let Some(parent) = frontier.pop() {
+        for t in &all_tasks {
+            if t.parent_id == Some(parent) && !to_delete.contains(&t.id) {
+                to_delete.push(t.id);
+                frontier.push(t.id);
+            }
+        }
+    }
+    // Delete children before the parent so a mid-cascade failure doesn't
+    // leave the parent removed but descendants stranded.
+    for child_id in to_delete {
         repo.delete_task(lid, child_id).map_err(|e| format!("Failed to delete subtask {}: {}", child_id, e))?;
     }
     repo.delete_task(lid, tid)

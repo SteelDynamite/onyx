@@ -50,23 +50,28 @@
 
   function selectDay(day: number) {
     selectedDay = day;
+    selectedYear = viewYear;
+    selectedMonth = viewMonth;
   }
 
   function isToday(day: number): boolean {
     return `${viewYear}-${viewMonth + 1}-${day}` === todayStr;
   }
 
+  let selectedYear = $state(existing ? existing.getFullYear() : now.getFullYear());
+  let selectedMonth = $state(existing ? existing.getMonth() : now.getMonth());
+
   function isSelected(day: number): boolean {
-    return selectedDay === day && (!value || (() => {
-      const v = new Date(value);
-      return v.getFullYear() === viewYear && v.getMonth() === viewMonth;
-    })());
+    return selectedDay === day && selectedYear === viewYear && selectedMonth === viewMonth;
   }
 
   function done() {
     const h = includeTime ? selectedHour : 0;
     const m = includeTime ? selectedMinute : 0;
-    const iso = new Date(viewYear, viewMonth, selectedDay, h, m).toISOString();
+    // Commit based on the last-selected year/month, not the currently-viewed
+    // ones — users can navigate months after selecting a day without
+    // accidentally shifting the chosen date to the viewed month.
+    const iso = new Date(selectedYear, selectedMonth, selectedDay, h, m).toISOString();
     onchange(iso, includeTime);
     dismiss();
   }
@@ -129,9 +134,9 @@
           <button
             onclick={() => selectDay(day)}
             class="mx-auto flex h-8 w-8 items-center justify-center rounded-full text-sm transition-colors
-              {selectedDay === day ? 'bg-primary text-white' : ''}
-              {isToday(day) && selectedDay !== day ? 'font-bold text-primary' : ''}
-              {selectedDay !== day && !isToday(day) ? 'hover:bg-black/5 dark:hover:bg-white/10' : ''}"
+              {isSelected(day) ? 'bg-primary text-white' : ''}
+              {isToday(day) && !isSelected(day) ? 'font-bold text-primary' : ''}
+              {!isSelected(day) && !isToday(day) ? 'hover:bg-black/5 dark:hover:bg-white/10' : ''}"
           >
             {day}
           </button>
