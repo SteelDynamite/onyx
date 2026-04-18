@@ -668,7 +668,6 @@ apps/tauri/
 │       │   ├── TaskItem.svelte
 │       │   ├── NewTaskInput.svelte
 │       │   ├── TaskDetailView.svelte
-│       │   ├── BottomSheet.svelte
 │       │   ├── ConfirmDialog.svelte
 │       │   └── DateTimePicker.svelte
 │       └── stores/
