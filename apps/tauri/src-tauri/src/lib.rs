@@ -67,6 +67,16 @@ impl AppState {
     }
 }
 
+/// Extract the hostname from a URL (scheme://host/...), used as the credential key.
+/// Returns an empty string if the URL has no scheme or host.
+fn credential_domain(url: &str) -> String {
+    url.split("://")
+        .nth(1)
+        .and_then(|rest| rest.split('/').next())
+        .unwrap_or("")
+        .to_string()
+}
+
 /// Validate that a workspace path is a reasonable directory and not a system path.
 fn validate_workspace_path(path: &str) -> Result<(), String> {
     let p = PathBuf::from(path);
@@ -266,10 +276,7 @@ async fn rename_workspace(
             let base_url = webdav_url.as_deref().ok_or("No WebDAV URL configured")?;
             let remote_path = webdav_path.as_deref().unwrap_or("");
 
-            let domain = base_url
-                .split("://").nth(1)
-                .and_then(|rest| rest.split('/').next())
-                .unwrap_or("").to_string();
+            let domain = credential_domain(base_url);
             let creds = app_handle.state::<Credentials<tauri::Wry>>();
             let (username, password) = creds.load(&domain)?;
 
@@ -761,12 +768,7 @@ fn add_webdav_workspace(
     s.repo = None;
 
     // Store credentials keyed by hostname
-    let domain = webdav_url
-        .split("://")
-        .nth(1)
-        .and_then(|rest| rest.split('/').next())
-        .unwrap_or("")
-        .to_string();
+    let domain = credential_domain(&webdav_url);
     s.save_config()?;
     drop(s);
     let creds = app_handle.state::<Credentials<tauri::Wry>>();
@@ -829,12 +831,7 @@ async fn sync_workspace(
     };
 
     // Step 2: load credentials
-    let domain = webdav_url
-        .split("://")
-        .nth(1)
-        .and_then(|rest| rest.split('/').next())
-        .unwrap_or("")
-        .to_string();
+    let domain = credential_domain(&webdav_url);
     let creds = app_handle.state::<Credentials<tauri::Wry>>();
     let (username, password) = creds.load(&domain)?;
 
