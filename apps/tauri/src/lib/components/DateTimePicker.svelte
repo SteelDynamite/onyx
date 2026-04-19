@@ -13,6 +13,8 @@
   let viewYear = $state(existing ? existing.getFullYear() : now.getFullYear());
   let viewMonth = $state(existing ? existing.getMonth() : now.getMonth());
   let selectedDay = $state(existing ? existing.getDate() : now.getDate());
+  let selectedYear = $state(existing ? existing.getFullYear() : now.getFullYear());
+  let selectedMonth = $state(existing ? existing.getMonth() : now.getMonth());
   let includeTime = $state(has_time);
   let selectedHour = $state(existing ? existing.getHours() : now.getHours());
   let selectedMinute = $state(existing ? existing.getMinutes() : 0);
@@ -57,9 +59,6 @@
   function isToday(day: number): boolean {
     return `${viewYear}-${viewMonth + 1}-${day}` === todayStr;
   }
-
-  let selectedYear = $state(existing ? existing.getFullYear() : now.getFullYear());
-  let selectedMonth = $state(existing ? existing.getMonth() : now.getMonth());
 
   function isSelected(day: number): boolean {
     return selectedDay === day && selectedYear === viewYear && selectedMonth === viewMonth;

@@ -418,7 +418,7 @@ function debouncedSync() {
 
 function restartSyncInterval() {
   if (_syncInterval) clearInterval(_syncInterval);
-  var secs = _appFocused ? syncIntervalSecs : syncIntervalUnfocusedSecs;
+  const secs = _appFocused ? syncIntervalSecs : syncIntervalUnfocusedSecs;
   _syncInterval = setInterval(triggerSync, secs * 1000);
 }
 

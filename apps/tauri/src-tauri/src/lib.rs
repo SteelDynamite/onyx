@@ -67,6 +67,25 @@ impl AppState {
     }
 }
 
+/// Extract the hostname from a URL (scheme://host/...), used as the credential key.
+/// Returns an empty string if the URL has no scheme or host.
+fn credential_domain(url: &str) -> String {
+    url.split("://")
+        .nth(1)
+        .and_then(|rest| rest.split('/').next())
+        .unwrap_or("")
+        .to_string()
+}
+
+/// Join a remote base directory with a child path, handling empty base and trailing slashes.
+fn join_remote_path(base: &str, child: &str) -> String {
+    if base.is_empty() {
+        child.to_string()
+    } else {
+        format!("{}/{}", base.trim_end_matches('/'), child)
+    }
+}
+
 /// Validate that a workspace path is a reasonable directory and not a system path.
 fn validate_workspace_path(path: &str) -> Result<(), String> {
     let p = PathBuf::from(path);
@@ -79,7 +98,10 @@ fn validate_workspace_path(path: &str) -> Result<(), String> {
     #[cfg(unix)]
     {
         let forbidden = ["/", "/etc", "/usr", "/bin", "/sbin", "/var", "/proc", "/sys", "/dev"];
+        // Strip trailing slashes, but keep "/" itself — trim_end_matches would
+        // collapse it to "" and slip past the forbidden check.
         let canonical = normalized.trim_end_matches('/');
+        let canonical = if canonical.is_empty() { "/" } else { canonical };
         if forbidden.contains(&canonical) {
             return Err(format!("Cannot use system directory as workspace: {}", path));
         }
@@ -263,10 +285,7 @@ async fn rename_workspace(
             let base_url = webdav_url.as_deref().ok_or("No WebDAV URL configured")?;
             let remote_path = webdav_path.as_deref().unwrap_or("");
 
-            let domain = base_url
-                .split("://").nth(1)
-                .and_then(|rest| rest.split('/').next())
-                .unwrap_or("").to_string();
+            let domain = credential_domain(base_url);
             let creds = app_handle.state::<Credentials<tauri::Wry>>();
             let (username, password) = creds.load(&domain)?;
 
@@ -645,10 +664,9 @@ async fn list_remote_folder(
     let dir_entries: Vec<_> = entries.into_iter().filter(|e| e.is_dir).collect();
 
     // Check all subfolders for .onyx-workspace.json in parallel
-    let sub_paths: Vec<_> = dir_entries.iter().map(|entry| {
-        if path.is_empty() { entry.path.clone() }
-        else { format!("{}/{}", path.trim_end_matches('/'), entry.path) }
-    }).collect();
+    let sub_paths: Vec<_> = dir_entries.iter()
+        .map(|entry| join_remote_path(&path, &entry.path))
+        .collect();
     let checks: Vec<_> = sub_paths.iter().map(|sp| {
         client.list_files(sp)
     }).collect();
@@ -680,11 +698,7 @@ async fn inspect_remote_workspace(
     let mut lists = Vec::new();
     for entry in entries {
         if !entry.is_dir { continue; }
-        let list_path = if path.is_empty() {
-            entry.path.clone()
-        } else {
-            format!("{}/{}", path.trim_end_matches('/'), entry.path)
-        };
+        let list_path = join_remote_path(&path, &entry.path);
         let files = client.list_files(&list_path).await.unwrap_or_else(|e| {
             eprintln!("Warning: failed to list remote folder '{}': {}", list_path, e);
             Vec::new()
@@ -720,11 +734,7 @@ async fn create_remote_workspace(
         "list_order": [],
         "last_opened_list": null,
     });
-    let file_path = if path.is_empty() {
-        ".onyx-workspace.json".to_string()
-    } else {
-        format!("{}/{}", path.trim_end_matches('/'), ".onyx-workspace.json")
-    };
+    let file_path = join_remote_path(&path, ".onyx-workspace.json");
     client.put_file(&file_path, serde_json::to_string_pretty(&metadata).map_err(|e| e.to_string())?.into_bytes())
         .await
         .map_err(|e| e.to_string())?;
@@ -758,12 +768,7 @@ fn add_webdav_workspace(
     s.repo = None;
 
     // Store credentials keyed by hostname
-    let domain = webdav_url
-        .split("://")
-        .nth(1)
-        .and_then(|rest| rest.split('/').next())
-        .unwrap_or("")
-        .to_string();
+    let domain = credential_domain(&webdav_url);
     s.save_config()?;
     drop(s);
     let creds = app_handle.state::<Credentials<tauri::Wry>>();
@@ -826,12 +831,7 @@ async fn sync_workspace(
     };
 
     // Step 2: load credentials
-    let domain = webdav_url
-        .split("://")
-        .nth(1)
-        .and_then(|rest| rest.split('/').next())
-        .unwrap_or("")
-        .to_string();
+    let domain = credential_domain(&webdav_url);
     let creds = app_handle.state::<Credentials<tauri::Wry>>();
     let (username, password) = creds.load(&domain)?;
 
