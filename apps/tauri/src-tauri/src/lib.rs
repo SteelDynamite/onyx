@@ -77,6 +77,15 @@ fn credential_domain(url: &str) -> String {
         .to_string()
 }
 
+/// Join a remote base directory with a child path, handling empty base and trailing slashes.
+fn join_remote_path(base: &str, child: &str) -> String {
+    if base.is_empty() {
+        child.to_string()
+    } else {
+        format!("{}/{}", base.trim_end_matches('/'), child)
+    }
+}
+
 /// Validate that a workspace path is a reasonable directory and not a system path.
 fn validate_workspace_path(path: &str) -> Result<(), String> {
     let p = PathBuf::from(path);
@@ -655,10 +664,9 @@ async fn list_remote_folder(
     let dir_entries: Vec<_> = entries.into_iter().filter(|e| e.is_dir).collect();
 
     // Check all subfolders for .onyx-workspace.json in parallel
-    let sub_paths: Vec<_> = dir_entries.iter().map(|entry| {
-        if path.is_empty() { entry.path.clone() }
-        else { format!("{}/{}", path.trim_end_matches('/'), entry.path) }
-    }).collect();
+    let sub_paths: Vec<_> = dir_entries.iter()
+        .map(|entry| join_remote_path(&path, &entry.path))
+        .collect();
     let checks: Vec<_> = sub_paths.iter().map(|sp| {
         client.list_files(sp)
     }).collect();
@@ -690,11 +698,7 @@ async fn inspect_remote_workspace(
     let mut lists = Vec::new();
     for entry in entries {
         if !entry.is_dir { continue; }
-        let list_path = if path.is_empty() {
-            entry.path.clone()
-        } else {
-            format!("{}/{}", path.trim_end_matches('/'), entry.path)
-        };
+        let list_path = join_remote_path(&path, &entry.path);
         let files = client.list_files(&list_path).await.unwrap_or_else(|e| {
             eprintln!("Warning: failed to list remote folder '{}': {}", list_path, e);
             Vec::new()
@@ -730,11 +734,7 @@ async fn create_remote_workspace(
         "list_order": [],
         "last_opened_list": null,
     });
-    let file_path = if path.is_empty() {
-        ".onyx-workspace.json".to_string()
-    } else {
-        format!("{}/{}", path.trim_end_matches('/'), ".onyx-workspace.json")
-    };
+    let file_path = join_remote_path(&path, ".onyx-workspace.json");
     client.put_file(&file_path, serde_json::to_string_pretty(&metadata).map_err(|e| e.to_string())?.into_bytes())
         .await
         .map_err(|e| e.to_string())?;
