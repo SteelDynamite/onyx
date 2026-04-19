@@ -106,7 +106,7 @@ Pre-alpha. No users, no released builds, no data to migrate. Breaking changes to
 - Task deduplication on load (handles sync conflict duplicates)
 - Subtask hierarchy: subtask count shown on parent tasks in list, subtask detail via three-panel slide navigation, inline add at top of subtask list (new subtasks prepend), collapsible completed subtasks section, cascade delete (parent deletion removes all subtasks with confirmation warning)
 - Custom confirmation dialogs (ConfirmDialog component replaces native confirm())
-- Workspace path validation (rejects system directories)
+- Workspace path validation (rejects filesystem root `/` and system directories: `/etc`, `/usr`, `/bin`, `/sbin`, `/var`, `/proc`, `/sys`, `/dev`)
 - Task detail auto-cleanup (taskStack clears when viewed task is deleted or list switches)
 - Swipe gestures on mobile: swipe left/right on a task to toggle completion (swipe direction depends on current status)
 - Accessibility: ARIA labels/roles on interactive components, keyboard handlers, `prefers-reduced-motion` CSS support

@@ -454,7 +454,7 @@ All metadata and state files use an atomic write pattern (write to `.tmp` then r
 
 - **List names**: Rejected if they contain `/`, `\`, or `..` components. Canonicalized and verified to stay within workspace root.
 - **Sync paths**: Validated to reject `..` components and backslashes anywhere in the path before any file system operation.
-- **Workspace paths** (Tauri): Rejected if they point to system directories (`/etc`, `/usr`, `/bin`, etc.).
+- **Workspace paths** (Tauri): Rejected if they point to the filesystem root (`/`) or system directories (`/etc`, `/usr`, `/bin`, `/sbin`, `/var`, `/proc`, `/sys`, `/dev`).
 - **Filenames**: Sanitized to replace `/ \ : * ? " < > |` and control characters with `_`.
 
 ## Example: Complete Workflow
