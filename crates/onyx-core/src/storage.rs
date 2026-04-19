@@ -457,26 +457,37 @@ impl Storage for FileSystemStorage {
         }
 
         let mut tasks = Vec::new();
-        for (_id, mut entries) in by_id {
-            if entries.len() > 1 {
-                entries.sort_by(|a, b| {
+        for (_id, entries) in by_id {
+            let winner = if entries.len() > 1 {
+                // Read mtime once per file so sort_by doesn't hit the filesystem
+                // O(n log n) times and can't produce inconsistent orderings if a
+                // file is touched mid-sort.
+                let mut with_mtime: Vec<(PathBuf, Task, Option<std::time::SystemTime>)> = entries
+                    .into_iter()
+                    .map(|(p, t)| {
+                        let mtime = fs::metadata(&p).and_then(|m| m.modified()).ok();
+                        (p, t, mtime)
+                    })
+                    .collect();
+                with_mtime.sort_by(|a, b| {
                     // Primary: highest version first
                     let version_cmp = b.1.version.cmp(&a.1.version);
                     if version_cmp != std::cmp::Ordering::Equal {
                         return version_cmp;
                     }
                     // Tiebreaker: most recently modified file first
-                    let mtime_a = fs::metadata(&a.0).and_then(|m| m.modified()).ok();
-                    let mtime_b = fs::metadata(&b.0).and_then(|m| m.modified()).ok();
-                    mtime_b.cmp(&mtime_a)
+                    b.2.cmp(&a.2)
                 });
-                for (stale_path, _) in entries.drain(1..) {
+                for (stale_path, _, _) in with_mtime.drain(1..) {
                     if let Err(e) = fs::remove_file(&stale_path) {
                         eprintln!("Warning: failed to remove stale duplicate task file {:?}: {}", stale_path, e);
                     }
                 }
-            }
-            let (_, task) = entries.into_iter().next()
+                with_mtime.into_iter().next().map(|(_, t, _)| t)
+            } else {
+                entries.into_iter().next().map(|(_, t)| t)
+            };
+            let task = winner
                 .ok_or_else(|| Error::InvalidData("Empty dedup entries for task".to_string()))?;
             tasks.push(task);
         }
