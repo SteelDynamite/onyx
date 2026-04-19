@@ -79,7 +79,10 @@ fn validate_workspace_path(path: &str) -> Result<(), String> {
     #[cfg(unix)]
     {
         let forbidden = ["/", "/etc", "/usr", "/bin", "/sbin", "/var", "/proc", "/sys", "/dev"];
+        // Strip trailing slashes, but keep "/" itself — trim_end_matches would
+        // collapse it to "" and slip past the forbidden check.
         let canonical = normalized.trim_end_matches('/');
+        let canonical = if canonical.is_empty() { "/" } else { canonical };
         if forbidden.contains(&canonical) {
             return Err(format!("Cannot use system directory as workspace: {}", path));
         }
