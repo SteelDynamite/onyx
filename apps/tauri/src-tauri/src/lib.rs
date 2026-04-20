@@ -450,12 +450,11 @@ fn delete_task(
     // so deleting a parent can't leave grandchildren orphaned with a
     // parent_id pointing at a deleted task.
     let all_tasks = repo.list_tasks(lid).map_err(|e| e.to_string())?;
-    let mut to_delete: Vec<Uuid> = Vec::new();
+    let mut to_delete: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
     let mut frontier: Vec<Uuid> = vec![tid];
     while let Some(parent) = frontier.pop() {
         for t in &all_tasks {
-            if t.parent_id == Some(parent) && !to_delete.contains(&t.id) {
-                to_delete.push(t.id);
+            if t.parent_id == Some(parent) && to_delete.insert(t.id) {
                 frontier.push(t.id);
             }
         }
