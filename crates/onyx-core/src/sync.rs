@@ -753,7 +753,7 @@ async fn execute_action(
 
                 // For .md task files inside a list dir, create a duplicate of the local version
                 let parts: Vec<&str> = path.split('/').collect();
-                if parts.len() == 2 && parts[1].ends_with(".md") && parts[1] != ".listdata.json" {
+                if parts.len() == 2 && parts[1].ends_with(".md") {
                     let local_content = String::from_utf8_lossy(&local_data);
                     if let Ok((frontmatter, description)) = parse_frontmatter_for_conflict(&local_content) {
                         let original_id = frontmatter.id;
