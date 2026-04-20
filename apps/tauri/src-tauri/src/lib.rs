@@ -495,7 +495,9 @@ fn toggle_task(
                 TaskStatus::Backlog => child.uncomplete(),
                 TaskStatus::Completed => child.complete(),
             }
-            let _ = repo.update_task(lid, child);
+            let child_id = child.id;
+            repo.update_task(lid, child)
+                .map_err(|e| format!("Failed to cascade to subtask {}: {}", child_id, e))?;
         }
     }
     Ok(task)
