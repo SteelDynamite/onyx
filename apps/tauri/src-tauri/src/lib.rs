@@ -60,6 +60,11 @@ fn lock_state(state: &Mutex<AppState>) -> Result<std::sync::MutexGuard<'_, AppSt
     state.lock().map_err(|e| format!("State lock poisoned: {}", e))
 }
 
+/// Parse a UUID from a string, converting errors to the String format Tauri commands use.
+fn parse_uuid(s: &str) -> Result<Uuid, String> {
+    Uuid::parse_str(s).map_err(|e| e.to_string())
+}
+
 impl AppState {
     /// Persist config to disk, converting errors to String for Tauri commands.
     fn save_config(&self) -> Result<(), String> {
@@ -366,7 +371,7 @@ fn delete_list(
     let mut s = lock_state(&state)?;
     ensure_repo(&mut s)?;
     mute_watcher(&mut s);
-    let id = Uuid::parse_str(&list_id).map_err(|e| e.to_string())?;
+    let id = parse_uuid(&list_id)?;
     repo_mut(&mut s)?
         .delete_list(id)
         .map_err(|e| e.to_string())
@@ -381,7 +386,7 @@ fn list_tasks(
 ) -> Result<Vec<Task>, String> {
     let mut s = lock_state(&state)?;
     ensure_repo(&mut s)?;
-    let id = Uuid::parse_str(&list_id).map_err(|e| e.to_string())?;
+    let id = parse_uuid(&list_id)?;
     repo_ref(&s)?
         .list_tasks(id)
         .map_err(|e| e.to_string())
@@ -400,13 +405,13 @@ fn create_task(
     let mut s = lock_state(&state)?;
     ensure_repo(&mut s)?;
     mute_watcher(&mut s);
-    let id = Uuid::parse_str(&list_id).map_err(|e| e.to_string())?;
+    let id = parse_uuid(&list_id)?;
     let mut task = Task::new(title);
     if let Some(desc) = description.filter(|d| !d.is_empty()) {
         task.description = desc;
     }
     if let Some(pid) = parent_id {
-        let parent_uuid = Uuid::parse_str(&pid).map_err(|e| e.to_string())?;
+        let parent_uuid = parse_uuid(&pid)?;
         task.parent_id = Some(parent_uuid);
     }
     // Accept the date fields at creation time so callers don't have to do a
@@ -428,7 +433,7 @@ fn update_task(
     let mut s = lock_state(&state)?;
     ensure_repo(&mut s)?;
     mute_watcher(&mut s);
-    let id = Uuid::parse_str(&list_id).map_err(|e| e.to_string())?;
+    let id = parse_uuid(&list_id)?;
     repo_mut(&mut s)?
         .update_task(id, task)
         .map_err(|e| e.to_string())
@@ -443,19 +448,18 @@ fn delete_task(
     let mut s = lock_state(&state)?;
     ensure_repo(&mut s)?;
     mute_watcher(&mut s);
-    let lid = Uuid::parse_str(&list_id).map_err(|e| e.to_string())?;
-    let tid = Uuid::parse_str(&task_id).map_err(|e| e.to_string())?;
+    let lid = parse_uuid(&list_id)?;
+    let tid = parse_uuid(&task_id)?;
     let repo = repo_mut(&mut s)?;
     // Cascade-delete the full descendant subtree (not just direct children)
     // so deleting a parent can't leave grandchildren orphaned with a
     // parent_id pointing at a deleted task.
     let all_tasks = repo.list_tasks(lid).map_err(|e| e.to_string())?;
-    let mut to_delete: Vec<Uuid> = Vec::new();
+    let mut to_delete: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
     let mut frontier: Vec<Uuid> = vec![tid];
     while let Some(parent) = frontier.pop() {
         for t in &all_tasks {
-            if t.parent_id == Some(parent) && !to_delete.contains(&t.id) {
-                to_delete.push(t.id);
+            if t.parent_id == Some(parent) && to_delete.insert(t.id) {
                 frontier.push(t.id);
             }
         }
@@ -478,8 +482,8 @@ fn toggle_task(
     let mut s = lock_state(&state)?;
     ensure_repo(&mut s)?;
     mute_watcher(&mut s);
-    let lid = Uuid::parse_str(&list_id).map_err(|e| e.to_string())?;
-    let tid = Uuid::parse_str(&task_id).map_err(|e| e.to_string())?;
+    let lid = parse_uuid(&list_id)?;
+    let tid = parse_uuid(&task_id)?;
     let repo = repo_mut(&mut s)?;
     let mut task = repo.get_task(lid, tid).map_err(|e| e.to_string())?;
     match task.status {
@@ -496,7 +500,9 @@ fn toggle_task(
                 TaskStatus::Backlog => child.uncomplete(),
                 TaskStatus::Completed => child.complete(),
             }
-            let _ = repo.update_task(lid, child);
+            let child_id = child.id;
+            repo.update_task(lid, child)
+                .map_err(|e| format!("Failed to cascade to subtask {}: {}", child_id, e))?;
         }
     }
     Ok(task)
@@ -512,8 +518,8 @@ fn reorder_task(
     let mut s = lock_state(&state)?;
     ensure_repo(&mut s)?;
     mute_watcher(&mut s);
-    let lid = Uuid::parse_str(&list_id).map_err(|e| e.to_string())?;
-    let tid = Uuid::parse_str(&task_id).map_err(|e| e.to_string())?;
+    let lid = parse_uuid(&list_id)?;
+    let tid = parse_uuid(&task_id)?;
     repo_mut(&mut s)?
         .reorder_task(lid, tid, new_position)
         .map_err(|e| e.to_string())
@@ -531,9 +537,9 @@ fn move_task(
     let mut s = lock_state(&state)?;
     ensure_repo(&mut s)?;
     mute_watcher(&mut s);
-    let from = Uuid::parse_str(&from_list_id).map_err(|e| e.to_string())?;
-    let to = Uuid::parse_str(&to_list_id).map_err(|e| e.to_string())?;
-    let tid = Uuid::parse_str(&task_id).map_err(|e| e.to_string())?;
+    let from = parse_uuid(&from_list_id)?;
+    let to = parse_uuid(&to_list_id)?;
+    let tid = parse_uuid(&task_id)?;
     repo_mut(&mut s)?
         .move_task(from, to, tid)
         .map_err(|e| e.to_string())
@@ -548,7 +554,7 @@ fn rename_list(
     let mut s = lock_state(&state)?;
     ensure_repo(&mut s)?;
     mute_watcher(&mut s);
-    let id = Uuid::parse_str(&list_id).map_err(|e| e.to_string())?;
+    let id = parse_uuid(&list_id)?;
     repo_mut(&mut s)?
         .rename_list(id, new_name)
         .map_err(|e| e.to_string())
@@ -563,7 +569,7 @@ fn set_group_by_date(
     let mut s = lock_state(&state)?;
     ensure_repo(&mut s)?;
     mute_watcher(&mut s);
-    let id = Uuid::parse_str(&list_id).map_err(|e| e.to_string())?;
+    let id = parse_uuid(&list_id)?;
     repo_mut(&mut s)?
         .set_group_by_date(id, enabled)
         .map_err(|e| e.to_string())
@@ -576,7 +582,7 @@ fn get_group_by_date(
 ) -> Result<bool, String> {
     let mut s = lock_state(&state)?;
     ensure_repo(&mut s)?;
-    let id = Uuid::parse_str(&list_id).map_err(|e| e.to_string())?;
+    let id = parse_uuid(&list_id)?;
     repo_ref(&s)?
         .get_group_by_date(id)
         .map_err(|e| e.to_string())
