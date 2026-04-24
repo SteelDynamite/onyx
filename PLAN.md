@@ -502,7 +502,8 @@ pub async fn sync_workspace(
     webdav_url: &str,
     username: &str,
     password: &str,
-    mode: SyncMode,       // Full, PushOnly, or PullOnly
+    mode: SyncMode,       // Full, Push, or Pull
+    on_progress: Option<ProgressCallback>,
 ) -> Result<SyncResult>;
 
 pub fn get_sync_status(workspace_path: &Path) -> Result<SyncStatusInfo>;
@@ -1058,6 +1059,6 @@ This project is free and open-source software licensed under GPL v3.
 
 ---
 
-**Last Updated**: 2026-04-17
+**Last Updated**: 2026-04-24
 **Document Version**: 4.3
 **Status**: Ready to Implement - Milestone-Driven Plan
