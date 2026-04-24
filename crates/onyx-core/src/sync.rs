@@ -230,6 +230,22 @@ pub fn compute_sync_actions(
     actions
 }
 
+/// Remove base entries for files that are gone from both local and remote.
+/// `compute_sync_actions` emits no action for the both-deleted case, so without
+/// this pass those entries would persist in `.syncstate.json` indefinitely.
+fn prune_orphan_bases(
+    sync_state: &mut SyncState,
+    local_files: &[LocalFileInfo],
+    remote_files: &[RemoteFileSnapshot],
+) {
+    let live_paths: std::collections::HashSet<&str> = local_files
+        .iter()
+        .map(|f| f.path.as_str())
+        .chain(remote_files.iter().map(|f| f.path.as_str()))
+        .collect();
+    sync_state.files.retain(|p, _| live_paths.contains(p.as_str()));
+}
+
 /// Compare two timestamps for equality by parsing both, tolerating format differences.
 fn timestamps_equal(a: Option<&str>, b: Option<&str>) -> bool {
     match (a, b) {
@@ -604,6 +620,12 @@ async fn sync_workspace_inner(
             return Ok(result);
         }
     };
+
+    // Purge orphan base entries: files we previously tracked that are now gone
+    // from both local and remote. Without this, `.syncstate.json` accumulates
+    // ghost entries forever because the both-deleted diff case emits no action
+    // and so nothing else would clean them.
+    prune_orphan_bases(&mut sync_state, &local_files, &remote_files);
 
     // Compute actions from three-way diff
     let fresh_actions = compute_sync_actions(&local_files, &remote_files, &sync_state);
@@ -1105,6 +1127,22 @@ mod tests {
 
         let actions = compute_sync_actions(&local, &remote, &state);
         assert!(actions.is_empty());
+    }
+
+    #[test]
+    fn test_prune_orphan_bases() {
+        let mut state = SyncState::default();
+        state.files.insert("kept_local.md".to_string(), make_base("a"));
+        state.files.insert("kept_remote.md".to_string(), make_base("b"));
+        state.files.insert("orphan.md".to_string(), make_base("c"));
+
+        let local = vec![make_local("kept_local.md", "a")];
+        let remote = vec![make_remote("kept_remote.md")];
+        prune_orphan_bases(&mut state, &local, &remote);
+
+        assert!(state.files.contains_key("kept_local.md"));
+        assert!(state.files.contains_key("kept_remote.md"));
+        assert!(!state.files.contains_key("orphan.md"));
     }
 
     #[test]
