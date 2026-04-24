@@ -72,6 +72,8 @@ onyx/
 │       │   ├── main.ts
 │       │   ├── app.css                 # Tailwind CSS 4 + theme
 │       │   ├── App.svelte
+│       │   ├── test/
+│       │   │   └── setup.ts
 │       │   └── lib/
 │       │       ├── screens/            # Full-page views
 │       │       ├── components/         # Reusable UI components

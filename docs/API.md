@@ -353,12 +353,14 @@ Credentials are stored in the platform keychain (Windows Credential Manager, mac
 
 ```rust
 use onyx_core::webdav::{store_credentials, load_credentials, delete_credentials};
+use zeroize::Zeroizing;
 
 // Store credentials
 store_credentials("nextcloud.example.com", "username", "password")?;
 
-// Load credentials (returns Zeroizing<String> wrappers that wipe memory on drop)
-let (username, password) = load_credentials("nextcloud.example.com")?;
+// Load credentials — returns Zeroizing<String> wrappers that wipe memory on drop
+let (username, password): (Zeroizing<String>, Zeroizing<String>) =
+    load_credentials("nextcloud.example.com")?;
 
 // Delete credentials
 delete_credentials("nextcloud.example.com")?;
