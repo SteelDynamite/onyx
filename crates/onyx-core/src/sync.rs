@@ -204,8 +204,9 @@ pub fn compute_sync_actions(
             }
 
             // Remote present, local gone, base known: local was deleted
-            (None, Some(_), Some(b)) => {
-                let remote_changed = remote.is_some_and(|r| r.size != b.size || !timestamps_equal(r.last_modified.as_deref(), b.modified_at.as_deref()));
+            (None, Some(r), Some(b)) => {
+                let remote_changed = r.size != b.size
+                    || !timestamps_equal(r.last_modified.as_deref(), b.modified_at.as_deref());
                 if remote_changed {
                     // deleted locally + modified remotely -> download (remote wins)
                     actions.push(SyncAction::Download { path: path.to_string() });
