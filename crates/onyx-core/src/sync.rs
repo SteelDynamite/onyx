@@ -204,8 +204,9 @@ pub fn compute_sync_actions(
             }
 
             // Remote present, local gone, base known: local was deleted
-            (None, Some(_), Some(b)) => {
-                let remote_changed = remote.is_some_and(|r| r.size != b.size || !timestamps_equal(r.last_modified.as_deref(), b.modified_at.as_deref()));
+            (None, Some(r), Some(b)) => {
+                let remote_changed = r.size != b.size
+                    || !timestamps_equal(r.last_modified.as_deref(), b.modified_at.as_deref());
                 if remote_changed {
                     // deleted locally + modified remotely -> download (remote wins)
                     actions.push(SyncAction::Download { path: path.to_string() });
@@ -227,6 +228,22 @@ pub fn compute_sync_actions(
     // Sort actions for deterministic output
     actions.sort_by(|a, b| a.path().cmp(b.path()));
     actions
+}
+
+/// Remove base entries for files that are gone from both local and remote.
+/// `compute_sync_actions` emits no action for the both-deleted case, so without
+/// this pass those entries would persist in `.syncstate.json` indefinitely.
+fn prune_orphan_bases(
+    sync_state: &mut SyncState,
+    local_files: &[LocalFileInfo],
+    remote_files: &[RemoteFileSnapshot],
+) {
+    let live_paths: std::collections::HashSet<&str> = local_files
+        .iter()
+        .map(|f| f.path.as_str())
+        .chain(remote_files.iter().map(|f| f.path.as_str()))
+        .collect();
+    sync_state.files.retain(|p, _| live_paths.contains(p.as_str()));
 }
 
 /// Compare two timestamps for equality by parsing both, tolerating format differences.
@@ -603,6 +620,12 @@ async fn sync_workspace_inner(
             return Ok(result);
         }
     };
+
+    // Purge orphan base entries: files we previously tracked that are now gone
+    // from both local and remote. Without this, `.syncstate.json` accumulates
+    // ghost entries forever because the both-deleted diff case emits no action
+    // and so nothing else would clean them.
+    prune_orphan_bases(&mut sync_state, &local_files, &remote_files);
 
     // Compute actions from three-way diff
     let fresh_actions = compute_sync_actions(&local_files, &remote_files, &sync_state);
@@ -1104,6 +1127,22 @@ mod tests {
 
         let actions = compute_sync_actions(&local, &remote, &state);
         assert!(actions.is_empty());
+    }
+
+    #[test]
+    fn test_prune_orphan_bases() {
+        let mut state = SyncState::default();
+        state.files.insert("kept_local.md".to_string(), make_base("a"));
+        state.files.insert("kept_remote.md".to_string(), make_base("b"));
+        state.files.insert("orphan.md".to_string(), make_base("c"));
+
+        let local = vec![make_local("kept_local.md", "a")];
+        let remote = vec![make_remote("kept_remote.md")];
+        prune_orphan_bases(&mut state, &local, &remote);
+
+        assert!(state.files.contains_key("kept_local.md"));
+        assert!(state.files.contains_key("kept_remote.md"));
+        assert!(!state.files.contains_key("orphan.md"));
     }
 
     #[test]

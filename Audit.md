@@ -1,5 +1,13 @@
 # Audit Log
 
+## 2026-04-24
+
+Found and fixed 3 issues:
+
+1. **Bug: orphan base entries never cleaned from sync state** (sync.rs) — when a file was deleted both locally and remotely, `compute_sync_actions` emitted no action (the `(None, None, Some(_))` arm), so the base entry in `.syncstate.json` persisted forever. On each subsequent sync the same no-op case fired and the state file grew. Added `prune_orphan_bases` pass in `sync_workspace_inner` that drops base entries not present in either scan.
+2. **Code quality: redundant is_some_and on already-matched Option** (sync.rs:208) — the `(None, Some(_), Some(b))` arm re-checked `remote` via `remote.is_some_and(|r| ...)` even though the pattern had just proven `remote` is `Some(_)`. Bound the inner value with `Some(r)` in the pattern and used `r` directly.
+3. **Code quality: single-caller sanitize_filename wrapper** (storage.rs) — `FileSystemStorage::sanitize_filename` was a one-line forwarder to `crate::sanitize_filename` with one call site. Inlined the crate call and removed the method.
+
 ## 2026-04-20
 
 Found and fixed 4 issues:

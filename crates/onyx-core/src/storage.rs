@@ -236,12 +236,8 @@ impl FileSystemStorage {
         Ok(path)
     }
 
-    fn sanitize_filename(name: &str) -> String {
-        crate::sanitize_filename(name)
-    }
-
     fn task_file_path(&self, list_dir: &Path, task: &Task) -> PathBuf {
-        let safe_title = Self::sanitize_filename(&task.title);
+        let safe_title = crate::sanitize_filename(&task.title);
         let filename = if safe_title.is_empty() {
             task.id.to_string()
         } else {
