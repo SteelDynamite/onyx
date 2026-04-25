@@ -116,13 +116,7 @@ impl AppConfig {
             std::fs::create_dir_all(parent)?;
         }
         let content = serde_json::to_string_pretty(&self)?;
-        // Atomic write: write to temp file then rename to prevent corruption on crash
-        let temp = path.with_extension("tmp");
-        std::fs::write(&temp, &content)?;
-        if let Err(e) = std::fs::rename(&temp, path) {
-            let _ = std::fs::remove_file(&temp);
-            return Err(e.into());
-        }
+        crate::storage::atomic_write(path, content.as_bytes())?;
         Ok(())
     }
 
