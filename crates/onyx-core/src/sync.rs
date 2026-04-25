@@ -914,9 +914,15 @@ pub fn get_sync_status(workspace_path: &Path) -> Result<SyncStatusInfo> {
         }
     }
 
-    // Count files in base that are now missing locally (deleted)
+    // Count files in base that are now missing locally (deleted).
+    // Build a set of local paths once so the membership check is O(1) per
+    // tracked file instead of scanning local_files linearly each time.
+    let local_paths: std::collections::HashSet<&str> = local_files
+        .iter()
+        .map(|f| f.path.as_str())
+        .collect();
     for path in sync_state.files.keys() {
-        if !local_files.iter().any(|f| f.path == *path) {
+        if !local_paths.contains(path.as_str()) {
             pending_changes += 1;
         }
     }
