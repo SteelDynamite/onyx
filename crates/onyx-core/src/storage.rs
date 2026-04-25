@@ -14,11 +14,11 @@ const MAX_DESCRIPTION_LENGTH: usize = 1_000_000; // 1 MB
 /// Maximum allowed length for list names.
 const MAX_LIST_NAME_LENGTH: usize = 255;
 /// Maximum allowed size for YAML frontmatter (64 KB) to prevent DoS via crafted files.
-const MAX_FRONTMATTER_LENGTH: usize = 64 * 1024;
+pub(crate) const MAX_FRONTMATTER_LENGTH: usize = 64 * 1024;
 /// Workspace root metadata filename.
-const WORKSPACE_METADATA_FILE: &str = ".onyx-workspace.json";
+pub(crate) const WORKSPACE_METADATA_FILE: &str = ".onyx-workspace.json";
 /// Per-list metadata filename.
-const LIST_METADATA_FILE: &str = ".listdata.json";
+pub(crate) const LIST_METADATA_FILE: &str = ".listdata.json";
 /// Task file extension.
 const TASK_FILE_EXT: &str = "md";
 /// Default version for tasks without a version field (legacy files).

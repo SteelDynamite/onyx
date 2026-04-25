@@ -5,7 +5,10 @@ use serde::{Deserialize, Serialize};
 use sha2::{Sha256, Digest};
 use uuid::Uuid;
 use crate::error::{Error, Result};
-use crate::storage::{atomic_write, ListMetadata, TaskFrontmatter};
+use crate::storage::{
+    atomic_write, ListMetadata, TaskFrontmatter, LIST_METADATA_FILE, MAX_FRONTMATTER_LENGTH,
+    WORKSPACE_METADATA_FILE,
+};
 use crate::webdav::WebDavClient;
 
 /// File-based lock to prevent concurrent sync operations on the same workspace.
@@ -403,11 +406,6 @@ pub fn compute_checksum(data: &[u8]) -> String {
     hasher.update(data);
     format!("{:x}", hasher.finalize())
 }
-
-/// Workspace root metadata filename.
-const WORKSPACE_METADATA_FILE: &str = ".onyx-workspace.json";
-/// Per-list metadata filename.
-const LIST_METADATA_FILE: &str = ".listdata.json";
 
 /// Check if a file is syncable: *.md files and metadata files at expected depths.
 fn is_syncable(path: &str) -> bool {
@@ -862,10 +860,11 @@ fn parse_frontmatter_for_conflict(content: &str) -> Result<(TaskFrontmatter, Str
         .ok_or_else(|| Error::InvalidData("Missing closing frontmatter delimiter".to_string()))?;
     let frontmatter_str = lines[1..=end_idx].join("\n");
     // Reject oversized frontmatter to prevent DoS via crafted YAML
-    if frontmatter_str.len() > 64 * 1024 {
+    if frontmatter_str.len() > MAX_FRONTMATTER_LENGTH {
         return Err(Error::InvalidData(format!(
-            "Frontmatter too large ({} bytes, max 65536)",
-            frontmatter_str.len()
+            "Frontmatter too large ({} bytes, max {})",
+            frontmatter_str.len(),
+            MAX_FRONTMATTER_LENGTH
         )));
     }
     let frontmatter: TaskFrontmatter = serde_yaml::from_str(&frontmatter_str)
