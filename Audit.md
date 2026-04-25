@@ -1,5 +1,12 @@
 # Audit Log
 
+## 2026-04-25 (second pass)
+
+Found and fixed 2 issues (distinct from PR #62 which covers `get_sync_status`, `delete_task` cascade BFS, and `AppConfig::save_to_file`):
+
+1. **Code duplication: inline atomic-write in `OfflineQueue::save` and `SyncState::save`** (sync.rs) — both methods open-coded the same temp-file + rename + cleanup-on-failure dance even though `storage::atomic_write` is `pub(crate)` and already imported at the top of the file. Same dedup PR #62 applied to `AppConfig::save_to_file`, but for the two sync I/O paths. Replaced with `atomic_write` calls.
+2. **Duplicate constants between storage.rs and sync.rs** — `WORKSPACE_METADATA_FILE` (".onyx-workspace.json") and `LIST_METADATA_FILE` (".listdata.json") were defined identically in both files. `parse_frontmatter_for_conflict` also re-encoded the 64KB frontmatter cap as a magic number (`64 * 1024`) with "65536" baked into the error string, while storage.rs already had `MAX_FRONTMATTER_LENGTH`. Promoted the three storage definitions to `pub(crate)` and imported them in sync.rs so a future tweak (e.g. raising the cap) needs one edit instead of three.
+
 ## 2026-04-24
 
 Found and fixed 3 issues:
