@@ -454,7 +454,9 @@ impl Storage for FileSystemStorage {
 
         let mut tasks = Vec::new();
         for (_id, entries) in by_id {
-            let winner = if entries.len() > 1 {
+            // `by_id` only inserts non-empty groups, so each `entries` has at
+            // least one element.
+            let task = if entries.len() > 1 {
                 // Read mtime once per file so sort_by doesn't hit the filesystem
                 // O(n log n) times and can't produce inconsistent orderings if a
                 // file is touched mid-sort.
@@ -479,12 +481,14 @@ impl Storage for FileSystemStorage {
                         eprintln!("Warning: failed to remove stale duplicate task file {:?}: {}", stale_path, e);
                     }
                 }
-                with_mtime.into_iter().next().map(|(_, t, _)| t)
+                let (_, t, _) = with_mtime.into_iter().next()
+                    .expect("dedup group is non-empty after drain(1..)");
+                t
             } else {
-                entries.into_iter().next().map(|(_, t)| t)
+                let (_, t) = entries.into_iter().next()
+                    .expect("dedup group is non-empty");
+                t
             };
-            let task = winner
-                .ok_or_else(|| Error::InvalidData("Empty dedup entries for task".to_string()))?;
             tasks.push(task);
         }
 
