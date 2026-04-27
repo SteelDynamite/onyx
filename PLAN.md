@@ -765,7 +765,7 @@ WorkspaceConfig {
 - [x] List rename (inline input via list kebab menu in drawer)
 - [x] Keyboard shortcuts (Escape closes settings → detail → drawer → menus in priority order)
 - [x] Sync status indicators (last-sync time + upload/download counts chip in TasksScreen)
-- [x] Push/pull sync mode selection (session-only sync direction selector in SettingsScreen)
+- [ ] Push/pull sync mode selection (session-only sync direction selector in SettingsScreen)
 - [x] Group-by-date toggle per list (checkmark toggle in list kebab menu)
 - [x] Subtask hierarchy (expand/collapse, inline add, cascade toggle/delete)
 - [ ] Search/filter tasks
@@ -1058,6 +1058,6 @@ This project is free and open-source software licensed under GPL v3.
 
 ---
 
-**Last Updated**: 2026-04-23
-**Document Version**: 4.4
+**Last Updated**: 2026-04-27
+**Document Version**: 4.5
 **Status**: Ready to Implement - Milestone-Driven Plan
