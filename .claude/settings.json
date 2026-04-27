@@ -1,4 +1,15 @@
 {
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:nx71726.your-storageshare.de)",
+      "Bash(curl * nx71726.your-storageshare.de*)"
+    ]
+  },
+  "sandbox": {
+    "network": {
+      "allowedDomains": ["nx71726.your-storageshare.de"]
+    }
+  },
   "hooks": {
     "PreToolUse": [
       {
