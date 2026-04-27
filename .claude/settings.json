@@ -1,4 +1,9 @@
 {
+  "sandbox": {
+    "network": {
+      "allowedDomains": ["nx71726.your-storageshare.de"]
+    }
+  },
   "hooks": {
     "PreToolUse": [
       {
