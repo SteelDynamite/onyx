@@ -1,5 +1,13 @@
 # Audit Log
 
+## 2026-04-25
+
+Found and fixed 3 issues:
+
+1. **Perf: O(n²) deletion-detection in `get_sync_status`** (sync.rs:918) — for every path tracked in `sync_state.files`, the loop scanned `local_files` linearly via `.any(|f| f.path == *path)` to decide whether to count it as a deleted-locally pending change. The earlier "modified or new" loop already used the inverse direction with `sync_state.files.get(...)` (O(1)), so the second loop was the inconsistent one. Built a `HashSet<&str>` of local paths once and used `contains` for the membership check.
+2. **Perf: cascade delete walks all_tasks per frontier pop** (tauri/lib.rs:460) — `delete_task`'s descendant BFS scanned the full task list on every parent popped from the frontier, making the work O(n × depth). Built a `parent_id -> [child_id]` `HashMap` once, then the BFS visits each descendant in O(1) amortised, dropping total cost to O(n).
+3. **Code quality: duplicate atomic-write in `AppConfig::save_to_file`** (config.rs:114) — the function had its own copy of the temp-file + rename + cleanup-on-failure dance even though `storage::atomic_write` is `pub(crate)` and was already shared by `google_tasks.rs`. Replaced the inline implementation with a call to `crate::storage::atomic_write` so the crate has one canonical atomic write path.
+
 ## 2026-04-24
 
 Found and fixed 3 issues:

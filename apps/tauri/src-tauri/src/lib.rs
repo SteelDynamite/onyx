@@ -455,12 +455,23 @@ fn delete_task(
     // so deleting a parent can't leave grandchildren orphaned with a
     // parent_id pointing at a deleted task.
     let all_tasks = repo.list_tasks(lid).map_err(|e| e.to_string())?;
+    // Build a parent -> children index in one pass so the BFS below is O(n)
+    // instead of O(n * depth) scanning all tasks for each frontier pop.
+    let mut children_by_parent: std::collections::HashMap<Uuid, Vec<Uuid>> =
+        std::collections::HashMap::new();
+    for t in &all_tasks {
+        if let Some(pid) = t.parent_id {
+            children_by_parent.entry(pid).or_default().push(t.id);
+        }
+    }
     let mut to_delete: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
     let mut frontier: Vec<Uuid> = vec![tid];
     while let Some(parent) = frontier.pop() {
-        for t in &all_tasks {
-            if t.parent_id == Some(parent) && to_delete.insert(t.id) {
-                frontier.push(t.id);
+        if let Some(children) = children_by_parent.get(&parent) {
+            for &child_id in children {
+                if to_delete.insert(child_id) {
+                    frontier.push(child_id);
+                }
             }
         }
     }
