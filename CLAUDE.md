@@ -64,7 +64,7 @@ The GUI uses Svelte 5 runes mode (`$state`, `$derived`, `$effect`, `$props()`). 
 
 Pre-alpha. No users, no released builds, no data to migrate. Breaking changes to on-disk formats, config structure, or sync conventions are free — do not add migration logic.
 
-### Current state (2026-04-15)
+### Current state (2026-04-27)
 
 - **Phase 1** (Core + CLI): Complete
 - **Phase 2** (WebDAV sync): Complete — remote folder browsing, checksum-based conflict resolution, auto-sync lifecycle, per-workspace sync interval
