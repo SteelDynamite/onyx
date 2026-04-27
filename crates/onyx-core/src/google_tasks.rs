@@ -358,8 +358,15 @@ pub async fn sync_google_tasks(
         list_meta.task_order = task_order;
         list_meta.updated_at = Utc::now();
 
-        if let Ok(meta_content) = serde_json::to_string_pretty(&list_meta) {
-            let _ = atomic_write(&listdata_path, meta_content.as_bytes());
+        match serde_json::to_string_pretty(&list_meta) {
+            Ok(meta_content) => {
+                if let Err(e) = atomic_write(&listdata_path, meta_content.as_bytes()) {
+                    errors.push(format!("Failed to write metadata for list '{}': {}", gt_list.title, e));
+                }
+            }
+            Err(e) => {
+                errors.push(format!("Failed to serialize metadata for list '{}': {}", gt_list.title, e));
+            }
         }
     }
 
@@ -374,8 +381,15 @@ pub async fn sync_google_tasks(
         RootMetadata::default()
     };
     root_meta.list_order = new_list_order;
-    if let Ok(meta_content) = serde_json::to_string_pretty(&root_meta) {
-        let _ = atomic_write(&root_meta_path, meta_content.as_bytes());
+    match serde_json::to_string_pretty(&root_meta) {
+        Ok(meta_content) => {
+            if let Err(e) = atomic_write(&root_meta_path, meta_content.as_bytes()) {
+                errors.push(format!("Failed to write workspace metadata: {}", e));
+            }
+        }
+        Err(e) => {
+            errors.push(format!("Failed to serialize workspace metadata: {}", e));
+        }
     }
 
     Ok(GoogleSyncResult { downloaded, errors })

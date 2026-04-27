@@ -724,19 +724,20 @@ async fn execute_action(
                 Err(e) => return Err(e.into()),
             };
             let checksum = compute_checksum(&data);
+            let len = data.len() as u64;
 
             if let Some(parent) = path_parent(path) {
                 client.ensure_dir(parent).await?;
             }
 
             report(&format!("  ^ Uploading {}", path));
-            client.put_file(path, data.clone()).await?;
+            client.put_file(path, data).await?;
 
             // Record in sync state using local file metadata
             let modified = std::fs::metadata(&local_path).ok()
                 .and_then(|m| m.modified().ok())
                 .map(|t| { let dt: DateTime<Utc> = t.into(); dt.to_rfc3339() });
-            sync_state.record_file(path, &checksum, modified.as_deref(), data.len() as u64);
+            sync_state.record_file(path, &checksum, modified.as_deref(), len);
         }
 
         SyncAction::Conflict { path } => {

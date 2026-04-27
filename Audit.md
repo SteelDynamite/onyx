@@ -1,5 +1,13 @@
 # Audit Log
 
+## 2026-04-27
+
+Found and fixed 3 issues:
+
+1. **Perf: needless clone of upload payload** (sync.rs:733) — the `SyncAction::Upload` arm read the file into `data`, computed `compute_checksum(&data)`, then called `client.put_file(path, data.clone())`. The clone existed only because the next statement needed `data.len()` for the sync-state record. Captured `data.len() as u64` into `len` first, moved `data` into `put_file`, and used `len` afterwards — one full byte copy avoided per uploaded file.
+2. **Bug: Google Tasks sync silently drops metadata-write failures** (google_tasks.rs:361, 377) — both `.listdata.json` and `.onyx-workspace.json` were written via `if let Ok(meta_content) = serde_json::to_string_pretty(...) { let _ = atomic_write(...); }`, so a serialization or atomic-write error returned `Ok(GoogleSyncResult { downloaded: N, errors: [] })` even though list/workspace ordering was never persisted. Both writes now push their errors into the `errors` vec already returned in `GoogleSyncResult`.
+3. **Code quality: unreachable dead-error path in storage dedup** (storage.rs:447) — the dedup loop computed `Option<Task>` from each `by_id` group and then `ok_or_else(|| Error::InvalidData("Empty dedup entries for task"))?`. `by_id` is only populated by `entry(uuid).or_default().push(entry)`, so every group has ≥1 element and the `None` branch is unreachable. Replaced the `Option`+`?` with direct `expect` calls (one per branch) that document the non-empty invariant; the loop now yields `Task` directly.
+
 ## 2026-04-25
 
 Found and fixed 3 issues:
