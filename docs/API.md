@@ -523,9 +523,9 @@ Key test areas:
 
 ## Thread Safety
 
-The `Storage` trait requires `Send + Sync`, and `TaskRepository` wraps `Box<dyn Storage + Send + Sync>`, so repository instances can be shared across threads behind a `Mutex`. The Tauri GUI uses `Mutex<AppState>` for this purpose.
+`TaskRepository` holds its storage as `Box<dyn Storage + Send + Sync>`, so any concrete storage implementation passed in must be `Send + Sync`. Repository instances can be shared across threads behind a `Mutex` — the Tauri GUI uses `Mutex<AppState>` for this purpose.
 
 For concurrent access:
 
 1. Wrap `TaskRepository` in `Mutex` or `RwLock` (the Tauri app does this)
-2. Or create separate repository instances per thread (file system handles locking)
+2. Or create separate repository instances per thread. Note that `FileSystemStorage` does not coordinate writes between processes — concurrent multi-process writes to the same workspace are not supported outside the WebDAV sync flow, which uses a `.sync.lock` file.
