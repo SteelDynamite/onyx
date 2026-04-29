@@ -1203,7 +1203,6 @@ fn start_watcher(handle: tauri::AppHandle, path: PathBuf) {
     if let Ok(mut w) = WATCHER.lock() {
         *w = None;
     }
-    let handle = handle.clone();
     let debouncer = new_debouncer(
         std::time::Duration::from_millis(500),
         move |events: Result<Vec<notify_debouncer_mini::DebouncedEvent>, notify::Error>| {
