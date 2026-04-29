@@ -1,5 +1,13 @@
 # Audit Log
 
+## 2026-04-29
+
+Found and fixed 3 issues:
+
+1. **Code quality: duplicated atomic-write in `OfflineQueue::save`** (sync.rs:332) — the function maintained its own copy of the temp-file + rename + cleanup-on-failure dance even though `storage::atomic_write` is `pub(crate)` and was already shared by `AppConfig::save_to_file` (fixed 04-25) and `google_tasks.rs`. Replaced the inline implementation with a call to `crate::storage::atomic_write`.
+2. **Code quality: duplicated atomic-write in `SyncState::save`** (sync.rs:534) — same pattern as `OfflineQueue::save`. Replaced with a call to `atomic_write`, completing the consolidation of every per-call atomic write into a single shared helper.
+3. **Code quality: redundant clone in `start_watcher`** (tauri/lib.rs:1206) — `start_watcher(handle: tauri::AppHandle, ...)` took `handle` by value, then immediately did `let handle = handle.clone();` before moving it into the file-watcher closure. The parameter was unused outside the closure, so the intermediate clone was pure waste. Removed it.
+
 ## 2026-04-27
 
 Found and fixed 3 issues:
