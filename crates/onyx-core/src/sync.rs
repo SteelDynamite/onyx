@@ -341,13 +341,7 @@ impl OfflineQueue {
             return Ok(());
         }
         let content = serde_json::to_string_pretty(self)?;
-        // Atomic write: write to temp then rename
-        let temp_path = workspace_path.join(".syncqueue.json.tmp");
-        std::fs::write(&temp_path, &content)?;
-        if let Err(e) = std::fs::rename(&temp_path, &queue_path) {
-            let _ = std::fs::remove_file(&temp_path);
-            return Err(e.into());
-        }
+        atomic_write(&queue_path, content.as_bytes())?;
         Ok(())
     }
 
@@ -534,14 +528,7 @@ impl SyncState {
     pub fn save(&self, workspace_path: &Path) -> Result<()> {
         let state_path = workspace_path.join(".syncstate.json");
         let content = serde_json::to_string_pretty(self)?;
-        // Atomic write: write to temp file then rename to prevent corruption on crash
-        let temp_path = workspace_path.join(".syncstate.json.tmp");
-        std::fs::write(&temp_path, &content)?;
-        if let Err(e) = std::fs::rename(&temp_path, &state_path) {
-            // Clean up temp file on rename failure to prevent accumulation
-            let _ = std::fs::remove_file(&temp_path);
-            return Err(e.into());
-        }
+        atomic_write(&state_path, content.as_bytes())?;
         Ok(())
     }
 
